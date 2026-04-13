@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Painel de Scraping</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="bg-orb orb-a"></div>
+    <div class="bg-orb orb-b"></div>
+
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">Lead Operations</p>
+        <h1>Painel de Scraping</h1>
+      </div>
+      <div class="health" id="healthBadge">API: verificando...</div>
+    </header>
+
+    <main class="layout">
+      <section class="cards" id="summaryCards">
+        <article class="card">
+          <h2>Total de Leads</h2>
+          <p class="metric" id="metricTotalLeads">-</p>
+        </article>
+        <article class="card">
+          <h2>Leads Femininos</h2>
+          <p class="metric" id="metricFemaleLeads">-</p>
+        </article>
+        <article class="card">
+          <h2>Leads Masculinos</h2>
+          <p class="metric" id="metricMaleLeads">-</p>
+        </article>
+        <article class="card">
+          <h2>Fontes Ativas</h2>
+          <p class="metric" id="metricActiveSources">-</p>
+        </article>
+        <article class="card">
+          <h2>Execuções Completas</h2>
+          <p class="metric" id="metricCompleted">-</p>
+        </article>
+      </section>
+
+      <section class="panel run-panel" id="runPanel">
+        <div>
+          <h3>Executar Scraping</h3>
+          <p>Dispare uma coleta manual agora mesmo.</p>
+        </div>
+
+        <div class="run-controls">
+          <label>
+            Campo Atuacao
+            <select id="fieldAreaSelect">
+              <option value="">Todos os campos</option>
+            </select>
+          </label>
+          <label>
+            Fonte
+            <select id="sourceSelect"></select>
+          </label>
+          <label>
+            Token (opcional)
+            <input id="runToken" type="password" placeholder="x-panel-token" />
+          </label>
+          <div class="run-actions">
+            <button id="runButton" type="button">Executar Agora</button>
+            <button id="toggleManualMode" type="button" class="ghost">Scraping Manual</button>
+          </div>
+        </div>
+
+        <p id="runStatus" class="status"></p>
+
+        <div class="manual-scrape">
+          <div class="manual-head">
+            <div>
+              <h4>Scraping Manual</h4>
+              <p class="helper-text">Informe uma URL publica e os campos para extrair em modo preview.</p>
+            </div>
+            <button id="manualBackToApi" type="button" class="ghost">Scraping por API</button>
+          </div>
+
+          <div class="manual-controls">
+            <label class="manual-url-label">
+              URL
+              <input id="manualUrl" type="url" placeholder="https://site.com/pagina" />
+            </label>
+
+            <div class="manual-fields" id="manualFields">
+              <label><input type="checkbox" value="nome" checked /> Nome</label>
+              <label><input type="checkbox" value="email" checked /> Email</label>
+              <label><input type="checkbox" value="telefone" checked /> Telefone</label>
+              <label><input type="checkbox" value="cpf" /> CPF</label>
+              <label><input type="checkbox" value="cnpj" /> CNPJ</label>
+            </div>
+
+            <div class="manual-options">
+              <label class="inline-check"><input id="manualConsent" type="checkbox" /> Confirmo consentimento LGPD para salvar em Leads</label>
+            </div>
+
+            <button id="manualRunButton" type="button">Rodar Scraping Manual</button>
+          </div>
+
+          <p id="manualStatus" class="status"></p>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h3>Execuções</h3>
+          <div class="row-gap">
+            <button id="prevExecutions" type="button" class="ghost">Anterior</button>
+            <span id="executionsPageLabel" class="page-label">Página 1</span>
+            <button id="nextExecutions" type="button" class="ghost">Próxima</button>
+            <button id="refreshExecutions" type="button" class="ghost">Atualizar</button>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Fonte</th>
+                <th>Status</th>
+                <th>Scraped</th>
+                <th>Salvos</th>
+                <th>Duplicados</th>
+                <th>Erros</th>
+                <th>Fim</th>
+              </tr>
+            </thead>
+            <tbody id="executionsBody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h3>Leads</h3>
+          <div class="row-gap">
+            <select id="leadsSourceFilter"></select>
+            <select id="leadsGenderFilter">
+              <option value="">Todos os generos</option>
+              <option value="F">Feminino</option>
+              <option value="M">Masculino</option>
+            </select>
+            <label>
+              Por pagina
+              <select id="leadsPageSize">
+                <option value="10">10</option>
+                <option value="20" selected>20</option>
+                <option value="30">30</option>
+                <option value="50">50</option>
+                <option value="100">100</option>
+              </select>
+            </label>
+            <button id="prevLeads" type="button" class="ghost">Anterior</button>
+            <span id="leadsPageLabel" class="page-label">Página 1</span>
+            <button id="nextLeads" type="button" class="ghost">Próxima</button>
+            <button id="refreshLeads" type="button" class="ghost">Atualizar</button>
+          </div>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Nome</th>
+                <th>Email</th>
+                <th>Telefone</th>
+                <th>Genero</th>
+                <th>Fonte</th>
+                <th>Criado em</th>
+              </tr>
+            </thead>
+            <tbody id="leadsBody"></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+
+    <script src="./app.js"></script>
+  </body>
+</html>

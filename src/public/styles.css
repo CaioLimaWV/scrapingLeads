@@ -1,0 +1,350 @@
+:root {
+    --bg: #f6f4ef;
+    --bg-2: #eae4d7;
+    --ink: #1f2a2a;
+    --muted: #536168;
+    --accent: #0f7a6a;
+    --accent-2: #f3b61f;
+    --card: rgba(255, 255, 255, 0.78);
+    --border: rgba(31, 42, 42, 0.14);
+    --good: #2e8b57;
+    --bad: #a93c3c;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    font-family: "Space Grotesk", sans-serif;
+    color: var(--ink);
+    background: radial-gradient(circle at 15% 20%, var(--bg-2), var(--bg));
+    min-height: 100vh;
+}
+
+.bg-orb {
+    position: fixed;
+    border-radius: 999px;
+    filter: blur(60px);
+    z-index: -1;
+}
+
+.orb-a {
+    width: 340px;
+    height: 340px;
+    background: rgba(15, 122, 106, 0.18);
+    top: -110px;
+    right: -70px;
+}
+
+.orb-b {
+    width: 280px;
+    height: 280px;
+    background: rgba(243, 182, 31, 0.18);
+    bottom: -100px;
+    left: -60px;
+}
+
+.topbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    gap: 16px;
+    padding: 28px 28px 8px;
+}
+
+.eyebrow {
+    margin: 0;
+    font-size: 12px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--muted);
+}
+
+h1 {
+    margin: 4px 0 0;
+    font-size: clamp(24px, 3vw, 40px);
+}
+
+.health {
+    padding: 8px 12px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: var(--card);
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 12px;
+}
+
+.layout {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 16px;
+    padding: 12px 28px 32px;
+}
+
+.cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px;
+}
+
+.card,
+.panel {
+    border: 1px solid var(--border);
+    background: var(--card);
+    backdrop-filter: blur(8px);
+    border-radius: 16px;
+    box-shadow: 0 10px 30px rgba(20, 30, 30, 0.06);
+}
+
+.card {
+    padding: 14px 16px;
+}
+
+.card h2 {
+    margin: 0;
+    font-size: 14px;
+    color: var(--muted);
+}
+
+.metric {
+    margin: 8px 0 0;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 30px;
+    font-weight: 600;
+}
+
+.panel {
+    padding: 14px;
+}
+
+.panel-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 10px;
+}
+
+.run-panel {
+    display: grid;
+    gap: 12px;
+}
+
+.run-controls {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 10px;
+    align-items: end;
+}
+
+.run-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+}
+
+label {
+    display: grid;
+    gap: 6px;
+    font-size: 13px;
+    color: var(--muted);
+}
+
+input,
+select,
+button {
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    padding: 10px 12px;
+    font: inherit;
+}
+
+button {
+    background: linear-gradient(120deg, var(--accent), #11a78f);
+    color: #fff;
+    border: none;
+    cursor: pointer;
+    font-weight: 600;
+}
+
+button.ghost {
+    background: rgba(255, 255, 255, 0.65);
+    color: var(--ink);
+    border: 1px solid var(--border);
+}
+
+button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.status {
+    margin: 0;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 12px;
+}
+
+.manual-scrape {
+    border: 1px dashed var(--border);
+    border-radius: 12px;
+    padding: 12px;
+    display: none;
+    gap: 10px;
+    background: rgba(255, 255, 255, 0.45);
+}
+
+.run-panel.is-manual-mode .run-controls,
+.run-panel.is-manual-mode #runStatus {
+    display: none;
+}
+
+.run-panel.is-manual-mode .manual-scrape {
+    display: grid;
+}
+
+.manual-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 10px;
+}
+
+.manual-scrape h4 {
+    margin: 0;
+}
+
+.helper-text {
+    margin: 4px 0 0;
+    color: var(--muted);
+    font-size: 12px;
+}
+
+.manual-controls {
+    display: grid;
+    gap: 10px;
+}
+
+.manual-url-label {
+    width: 100%;
+}
+
+.manual-fields {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 8px;
+}
+
+.manual-fields label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.7);
+    color: var(--ink);
+}
+
+.manual-fields input[type="checkbox"] {
+    width: 14px;
+    height: 14px;
+    margin: 0;
+}
+
+.manual-options {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 10px;
+}
+
+.inline-check {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.72);
+    color: var(--ink);
+}
+
+.inline-check input[type="checkbox"] {
+    margin: 0;
+}
+
+.table-wrap {
+    overflow: auto;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    min-width: 760px;
+}
+
+th,
+td {
+    text-align: left;
+    padding: 10px;
+    border-bottom: 1px solid rgba(31, 42, 42, 0.08);
+    font-size: 13px;
+}
+
+th {
+    font-size: 12px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.badge {
+    display: inline-flex;
+    align-items: center;
+    border-radius: 999px;
+    padding: 3px 10px;
+    font-size: 11px;
+    font-family: "IBM Plex Mono", monospace;
+}
+
+.badge.completed {
+    background: rgba(46, 139, 87, 0.15);
+    color: var(--good);
+}
+
+.badge.failed,
+.badge.partial {
+    background: rgba(169, 60, 60, 0.15);
+    color: var(--bad);
+}
+
+.badge.running {
+    background: rgba(243, 182, 31, 0.2);
+    color: #7e5f00;
+}
+
+.row-gap {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.page-label {
+    min-width: 72px;
+    text-align: center;
+    font-size: 12px;
+    color: var(--muted);
+    font-family: "IBM Plex Mono", monospace;
+}
+
+@media (max-width: 780px) {
+    .topbar {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .layout {
+        padding: 12px 14px 22px;
+    }
+}
