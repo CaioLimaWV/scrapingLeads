@@ -44,7 +44,7 @@ async function processLead(executionId, sourceId, rawLead, counters) {
       execution_id: executionId,
       error_type: "validation",
       error_code: "LEAD_SCHEMA_INVALID",
-      message: error.message
+      message: error.message + " (Lead data: " + JSON.stringify(rawLead).substring(0, 200) + ")"
     });
     return;
   }

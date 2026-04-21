@@ -1,5 +1,5 @@
 const express = require("express");
-const { listLeads } = require("../repositories/leadRepository");
+const { listLeads, listUncontactedLeadsWithPhone, markLeadAsContacted } = require("../repositories/leadRepository");
 
 const router = express.Router();
 
@@ -8,7 +8,7 @@ function parseLimit(value, fallback = 50) {
   if (!Number.isInteger(parsed) || parsed <= 0) {
     return fallback;
   }
-  return Math.min(parsed, 100);
+  return parsed;
 }
 
 function parseOffset(value, fallback = 0) {
@@ -29,6 +29,28 @@ router.get("/", async (req, res, next) => {
 
     const leads = await listLeads({ limit, offset, sourceId, gender });
     res.json({ data: leads, pagination: { limit, offset, gender } });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get("/uncontacted", async (req, res, next) => {
+  try {
+    const leads = await listUncontactedLeadsWithPhone(100);
+    res.json({ data: leads });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post("/:id/contact", async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    if (!id || !Number.isInteger(id)) {
+      return res.status(400).json({ message: "Invalid lead ID" });
+    }
+    await markLeadAsContacted(id);
+    res.json({ success: true });
   } catch (error) {
     next(error);
   }

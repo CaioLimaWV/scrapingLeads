@@ -137,7 +137,7 @@ async function listLeads({ limit = 50, offset = 0, sourceId = null, gender = nul
 }
 
 async function countLeads() {
-  const row = await db("leads").count({ total: "id" }).first();
+  const row = await db("leads").count("* as total").first();
   return Number(row?.total || 0);
 }
 
@@ -180,6 +180,25 @@ async function countInferredGenderLeads() {
   return { female, male };
 }
 
+async function listUncontactedLeadsWithPhone(limit = 100) {
+  return db("leads")
+    .select("id", "name", "phone", "phone_normalized")
+    .where("contacted", false)
+    .whereNotNull("phone_normalized")
+    .where("phone_normalized", "!=", "")
+    .orderBy("id", "desc")
+    .limit(limit);
+}
+
+async function markLeadAsContacted(id) {
+  return db("leads")
+    .where({ id })
+    .update({
+      contacted: true,
+      contacted_at: db.fn.now()
+    });
+}
+
 module.exports = {
   findLeadByEmailAndSource,
   findLeadByFullIdentity,
@@ -189,5 +208,7 @@ module.exports = {
   countLeads,
   countFemaleLeads,
   countMaleLeads,
-  countInferredGenderLeads
+  countInferredGenderLeads,
+  listUncontactedLeadsWithPhone,
+  markLeadAsContacted
 };

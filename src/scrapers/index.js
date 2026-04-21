@@ -2,6 +2,8 @@ const { scrapeSampleStaticSource } = require("./sources/sampleStaticSource");
 const { scrapeCamaraDeputados } = require("./sources/camaraDeputadosSource");
 const { scrapeOverpassSource } = require("./sources/overpassSource");
 const { scrapeGenericApiSource } = require("./sources/genericApiSource");
+const { scrapeCnpj } = require("./sources/cnpjSource");
+const { scrapeGoogleMaps } = require("./sources/googleMapsSource");
 
 function isLikelyJsonApi(source) {
   const url = String(source.base_url || "").toLowerCase();
@@ -22,6 +24,14 @@ async function scrapeSource(source, config, logger) {
 
   if (source.name.startsWith("osm-") && source.base_url.includes("overpass-api.de/api/interpreter")) {
     return scrapeOverpassSource(source, config, logger);
+  }
+
+  if (source.name.startsWith("cnpj-receita")) {
+    return scrapeCnpj(source, config, logger);
+  }
+
+  if (source.name.startsWith("gmaps-")) {
+    return scrapeGoogleMaps(source, config, logger);
   }
 
   if (isLikelyJsonApi(source)) {
