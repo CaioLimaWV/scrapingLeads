@@ -1,0 +1,449 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Campanhas de Email</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./styles.css" />
+    <style>
+      .template-area { width: 100%; min-height: 160px; resize: vertical; font-family: "IBM Plex Mono", monospace; font-size: 0.85rem; padding: 0.6rem 0.8rem; border-radius: 6px; background: var(--bg-2); border: 1px solid var(--border); color: var(--ink); }
+      .template-area:focus { outline: 2px solid var(--accent); }
+      .hint { font-size: 0.75rem; color: var(--muted); margin-top: 0.25rem; }
+      .dryrun-badge { font-size: 0.7rem; background: var(--accent-2, #f0b429); color: #000; padding: 2px 8px; border-radius: 99px; font-weight: 700; vertical-align: middle; margin-left: 6px; }
+      .nav-links { display: flex; gap: 1rem; align-items: center; }
+      .nav-links a { color: var(--muted); font-size: 0.85rem; text-decoration: none; }
+      .nav-links a:hover { color: var(--accent); }
+      .nav-links a.active { color: var(--ink); font-weight: 600; }
+      .tracking-off { background: rgba(240,180,41,.15); border: 1px solid rgba(240,180,41,.4); border-radius: 6px; padding: 0.5rem 0.9rem; font-size: 0.8rem; color: var(--ink); margin-bottom: 0.5rem; }
+      .link-helper { display: flex; gap: 0.5rem; align-items: flex-end; flex-wrap: wrap; margin-bottom: 0.5rem; }
+      .link-helper input { flex: 1; min-width: 160px; }
+      .link-helper button { white-space: nowrap; }
+      .analytics-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+      @media(max-width:700px){ .analytics-grid { grid-template-columns: 1fr; } }
+      .stat-num { font-size: 1.4rem; font-weight: 700; font-family: "IBM Plex Mono", monospace; }
+      .stat-label { font-size: 0.75rem; color: var(--muted); }
+      .bar-row { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 4px; font-size: 0.8rem; }
+      .bar-bg { flex: 1; height: 8px; border-radius: 99px; background: var(--border); overflow: hidden; }
+      .bar-fill { height: 100%; border-radius: 99px; background: var(--accent); }
+    </style>
+  </head>
+  <body>
+    <div class="bg-orb orb-a"></div>
+    <div class="bg-orb orb-b"></div>
+
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">Lead Operations</p>
+        <h1>Campanhas de Email</h1>
+      </div>
+      <div class="nav-links">
+        <a href="/panel/">Scraping</a>
+        <a href="/panel/whatsapp">WhatsApp</a>
+        <a href="/panel/email" class="active">Email</a>
+      </div>
+    </header>
+
+    <main class="layout">
+
+      <!-- Cards de status do dia -->
+      <section class="cards">
+        <article class="card">
+          <h2>Enviados Hoje</h2>
+          <p class="metric" id="metricSentToday">-</p>
+        </article>
+        <article class="card">
+          <h2>Limite Diário</h2>
+          <p class="metric" id="metricDailyLimit">-</p>
+        </article>
+        <article class="card">
+          <h2>Restantes Hoje</h2>
+          <p class="metric" id="metricRemaining">-</p>
+        </article>
+        <article class="card">
+          <h2>Tracking</h2>
+          <p class="metric" id="metricTracking" style="font-size:1.1rem">-</p>
+        </article>
+      </section>
+
+      <!-- Painel de disparo -->
+      <section class="panel run-panel">
+        <div>
+          <h3>Disparar Campanha</h3>
+          <p>Configure o assunto e o corpo do email. Use <code>{{nome}}</code> para personalizar.</p>
+        </div>
+
+        <div id="trackingOffBanner" class="tracking-off" style="display:none">
+          ⚠️ <strong>Tracking desativado</strong> — aberturas e cliques não serão registrados.
+          Para ativar, defina <code>APP_BASE_URL</code> no <code>.env</code> com a URL pública do servidor.
+        </div>
+
+        <div class="run-controls">
+          <label>
+            Fonte (opcional — deixe em branco para todos)
+            <select id="sourceSelect">
+              <option value="">Todas as fontes</option>
+            </select>
+          </label>
+
+          <label>
+            Assunto
+            <input id="emailSubject" type="text" placeholder="Ex: Procura por desenvolvimento de site ou software?" />
+          </label>
+
+          <!-- Helper de inserção de link -->
+          <div>
+            <span style="font-size:0.85rem;font-weight:500">Inserir link no corpo</span>
+            <span class="hint">Preencha o texto e a URL, clique em "Inserir" para adicionar ao template.</span>
+            <div class="link-helper">
+              <input id="linkText" type="text" placeholder='Texto clicável (ex: "Fale comigo no WhatsApp")' />
+              <input id="linkUrl" type="url" placeholder="https://..." />
+              <button id="insertLinkBtn" type="button" class="ghost">Inserir link</button>
+            </div>
+          </div>
+
+          <label>
+            Corpo do Email (HTML permitido)
+            <textarea id="emailTemplate" class="template-area" placeholder="Olá {{nome}}, ..."></textarea>
+            <span class="hint">Use {{nome}} para o nome do lead. Links inseridos acima serão rastreados automaticamente quando o tracking estiver ativo.</span>
+          </label>
+
+          <label>
+            Token (opcional)
+            <input id="runToken" type="password" placeholder="x-panel-token" />
+          </label>
+
+          <div class="run-actions">
+            <button id="runButton" type="button">Enviar Campanha</button>
+            <button id="dryRunButton" type="button" class="ghost">Dry Run <span class="dryrun-badge">TESTE</span></button>
+          </div>
+        </div>
+
+        <p id="runStatus" class="status"></p>
+      </section>
+
+      <!-- Envio de teste -->
+      <section class="panel">
+        <div>
+          <h3>Envio de Teste</h3>
+          <p>Envia o email com o assunto e corpo acima para um endereço seu, para ver como chega antes de disparar para os leads.</p>
+        </div>
+        <div class="run-controls">
+          <label>
+            Email destinatário de teste
+            <input id="testEmail" type="email" placeholder="seuemail@gmail.com" />
+          </label>
+          <div class="run-actions">
+            <button id="testSendButton" type="button" class="ghost">Enviar para mim</button>
+          </div>
+        </div>
+        <p id="testStatus" class="status"></p>
+      </section>
+
+      <!-- Analytics -->
+      <section class="panel">
+        <div class="panel-head">
+          <h3>Analytics</h3>
+          <div class="row-gap">
+            <select id="analyticsDays">
+              <option value="7" selected>Últimos 7 dias</option>
+              <option value="14">Últimos 14 dias</option>
+              <option value="30">Últimos 30 dias</option>
+            </select>
+            <button id="refreshAnalytics" type="button" class="ghost">Atualizar</button>
+          </div>
+        </div>
+
+        <div class="analytics-grid" style="margin-top:1rem">
+          <!-- Envios por dia -->
+          <div>
+            <p style="font-weight:600;margin-bottom:0.75rem">Envios por dia</p>
+            <div id="chartByDay"><span style="color:var(--muted);font-size:0.85rem">Sem dados</span></div>
+          </div>
+          <!-- Top links clicados -->
+          <div>
+            <p style="font-weight:600;margin-bottom:0.75rem">Links mais clicados</p>
+            <div id="chartTopLinks"><span style="color:var(--muted);font-size:0.85rem">Sem dados</span></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Histórico de envios -->
+      <section class="panel">
+        <div class="panel-head">
+          <h3>Histórico de Envios</h3>
+          <div class="row-gap">
+            <button id="prevHistory" type="button" class="ghost">Anterior</button>
+            <span id="historyPageLabel" class="page-label">Página 1</span>
+            <button id="nextHistory" type="button" class="ghost">Próxima</button>
+            <button id="refreshHistory" type="button" class="ghost">Atualizar</button>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Lead</th>
+                <th>Email</th>
+                <th>Assunto</th>
+                <th>Status</th>
+                <th>Aberturas</th>
+                <th>Cliques</th>
+                <th>Enviado em</th>
+                <th>Erro</th>
+                <th>Ação</th>
+              </tr>
+            </thead>
+            <tbody id="historyBody"></tbody>
+          </table>
+        </div>
+      </section>
+
+    </main>
+
+    <script>
+      const state = {
+        historyOffset: 0,
+        historyLimit: 20
+      };
+
+      async function requestJson(url, options = {}) {
+        const res = await fetch(url, options);
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(body.message || `Request failed: ${res.status}`);
+        }
+        return res.json();
+      }
+
+      function setStatus(text, ok) {
+        const el = document.getElementById("runStatus");
+        el.textContent = text;
+        el.style.color = ok ? "var(--good)" : "var(--bad)";
+      }
+
+      function fmt(val) {
+        if (!val) return "—";
+        return new Date(val).toLocaleString("pt-BR");
+      }
+
+      function statusBadge(s) {
+        const map = { sent: ["var(--good)", "Enviado"], failed: ["var(--bad)", "Falhou"], skipped: ["var(--muted)", "Pulado"] };
+        const [color, label] = map[s] || ["var(--muted)", s];
+        return `<span style="color:${color};font-weight:600">${label}</span>`;
+      }
+
+      // --- Status ---
+      async function loadStatus() {
+        try {
+          const d = await requestJson("/api/email/status");
+          document.getElementById("metricSentToday").textContent = d.sentToday;
+          document.getElementById("metricDailyLimit").textContent = d.dailyLimit;
+          document.getElementById("metricRemaining").textContent = d.remaining;
+          const trackingEl = document.getElementById("metricTracking");
+          const banner = document.getElementById("trackingOffBanner");
+          if (d.trackingEnabled) {
+            trackingEl.textContent = "Ativo";
+            trackingEl.style.color = "var(--good)";
+            banner.style.display = "none";
+          } else {
+            trackingEl.textContent = "Inativo";
+            trackingEl.style.color = "var(--muted)";
+            banner.style.display = "block";
+          }
+        } catch (e) { console.error(e); }
+      }
+
+      // --- Sources ---
+      async function loadSources() {
+        try {
+          const { data } = await requestJson("/api/sources");
+          const sel = document.getElementById("sourceSelect");
+          data.forEach((s) => {
+            const o = document.createElement("option");
+            o.value = s.id;
+            o.textContent = s.name;
+            sel.appendChild(o);
+          });
+        } catch (e) { console.error(e); }
+      }
+
+      // --- Analytics ---
+      async function loadAnalytics() {
+        const days = document.getElementById("analyticsDays").value;
+        try {
+          const { byDay, topLinks } = await requestJson(`/api/email/analytics?days=${days}`);
+
+          // chart por dia
+          const maxSent = Math.max(...byDay.map(d => d.sent), 1);
+          const dayHtml = byDay.length === 0
+            ? '<span style="color:var(--muted);font-size:0.85rem">Sem dados no período</span>'
+            : byDay.map(d => `
+              <div class="bar-row">
+                <span style="width:90px;color:var(--muted)">${d.day}</span>
+                <div class="bar-bg"><div class="bar-fill" style="width:${Math.round(d.sent/maxSent*100)}%"></div></div>
+                <span style="width:24px;text-align:right">${d.sent}</span>
+                <span style="color:var(--good);font-size:0.75rem" title="Aberturas">👁 ${d.opens}</span>
+                <span style="color:var(--accent);font-size:0.75rem" title="Cliques">🔗 ${d.clicks}</span>
+                <span style="color:var(--bad);font-size:0.75rem" title="Descadastros">🚫 ${d.unsubscribes}</span>
+              </div>`).join("");
+          document.getElementById("chartByDay").innerHTML = dayHtml;
+
+          // top links
+          const maxClicks = Math.max(...topLinks.map(l => Number(l.cnt)), 1);
+          const linksHtml = topLinks.length === 0
+            ? '<span style="color:var(--muted);font-size:0.85rem">Nenhum clique registrado</span>'
+            : topLinks.map(l => `
+              <div class="bar-row">
+                <div class="bar-bg" style="flex:1"><div class="bar-fill" style="width:${Math.round(Number(l.cnt)/maxClicks*100)}%;background:var(--accent-2,#f0b429)"></div></div>
+                <span style="width:28px;text-align:right">${l.cnt}×</span>
+              </div>
+              <div style="font-size:0.7rem;color:var(--muted);margin-bottom:6px;word-break:break-all">${l.url_clicked}</div>`).join("");
+          document.getElementById("chartTopLinks").innerHTML = linksHtml;
+        } catch (e) { console.error(e); }
+      }
+
+      // --- Histórico ---
+      async function loadHistory() {
+        try {
+          const qs = new URLSearchParams({ limit: String(state.historyLimit), offset: String(state.historyOffset) });
+          const { data } = await requestJson(`/api/email/history?${qs}`);
+          const tbody = document.getElementById("historyBody");
+          const page = Math.floor(state.historyOffset / state.historyLimit) + 1;
+          document.getElementById("historyPageLabel").textContent = `Página ${page}`;
+          document.getElementById("prevHistory").disabled = state.historyOffset === 0;
+          document.getElementById("nextHistory").disabled = data.length < state.historyLimit;
+
+          if (!data.length) {
+            tbody.innerHTML = `<tr><td colspan="10" style="text-align:center;color:var(--muted)">Nenhum envio registrado</td></tr>`;
+            return;
+          }
+          tbody.innerHTML = data.map(r => `
+            <tr>
+              <td>${r.id}</td>
+              <td>${r.lead_name || "—"}</td>
+              <td style="font-family:'IBM Plex Mono',monospace;font-size:0.8rem">${r.lead_email || "—"}</td>
+              <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${r.subject}">${r.subject}</td>
+              <td>${statusBadge(r.status)}</td>
+              <td style="text-align:center">${r.opens > 0 ? `<span style="color:var(--good)">${r.opens}</span>` : `<span style="color:var(--muted)">0</span>`}</td>
+              <td style="text-align:center">${r.clicks > 0 ? `<span style="color:var(--accent)">${r.clicks}</span>` : `<span style="color:var(--muted)">0</span>`}</td>
+              <td>${fmt(r.sent_at)}</td>
+              <td style="color:var(--bad);font-size:0.8rem;max-width:120px;overflow:hidden;text-overflow:ellipsis" title="${r.error_message||''}">${r.error_message || ""}</td>
+              <td><button class="ghost" style="font-size:0.75rem;padding:2px 8px" onclick="unsubscribe(${r.lead_id})">Unsub</button></td>
+            </tr>`).join("");
+        } catch (e) { console.error(e); }
+      }
+
+      async function unsubscribe(leadId) {
+        if (!confirm(`Marcar lead #${leadId} como unsubscribed?`)) return;
+        try {
+          await requestJson(`/api/email/unsubscribe/${leadId}`, { method: "POST" });
+          await loadHistory();
+        } catch (e) { alert(`Erro: ${e.message}`); }
+      }
+
+      // --- Helper de inserção de link ---
+      document.getElementById("insertLinkBtn").addEventListener("click", () => {
+        const text = document.getElementById("linkText").value.trim();
+        const url = document.getElementById("linkUrl").value.trim();
+        if (!text || !url) { alert("Preencha o texto e a URL do link."); return; }
+        const tag = `<a href="${url}">${text}</a>`;
+        const ta = document.getElementById("emailTemplate");
+        const start = ta.selectionStart;
+        const end = ta.selectionEnd;
+        ta.value = ta.value.slice(0, start) + tag + ta.value.slice(end);
+        ta.focus();
+        ta.selectionStart = ta.selectionEnd = start + tag.length;
+        document.getElementById("linkText").value = "";
+        document.getElementById("linkUrl").value = "";
+      });
+
+      // --- Disparo ---
+      async function dispatchCampaign(dryRun) {
+        const subject = document.getElementById("emailSubject").value.trim();
+        const template = document.getElementById("emailTemplate").value.trim();
+        const sourceId = document.getElementById("sourceSelect").value || null;
+        const token = document.getElementById("runToken").value.trim();
+
+        if (!subject) { setStatus("Informe o assunto.", false); return; }
+        if (!template) { setStatus("Informe o corpo do email.", false); return; }
+
+        setStatus(dryRun ? "Simulando..." : "Enviando...", true);
+        document.getElementById("runButton").disabled = true;
+        document.getElementById("dryRunButton").disabled = true;
+
+        try {
+          const { totals } = await requestJson("/api/email/run", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              ...(token ? { "x-panel-token": token } : {})
+            },
+            body: JSON.stringify({ sourceId, subject, template, dryRun })
+          });
+          const prefix = dryRun ? "[DRY RUN] " : "";
+          setStatus(`${prefix}Enviados: ${totals.sent} | Falhos: ${totals.failed} | Pulados: ${totals.skipped} | Restantes hoje: ${totals.remaining}`, true);
+          await Promise.all([loadStatus(), loadHistory(), loadAnalytics()]);
+        } catch (e) {
+          setStatus(`Erro: ${e.message}`, false);
+        } finally {
+          document.getElementById("runButton").disabled = false;
+          document.getElementById("dryRunButton").disabled = false;
+        }
+      }
+
+      document.getElementById("testSendButton").addEventListener("click", async () => {
+        const toEmail = document.getElementById("testEmail").value.trim();
+        const subject = document.getElementById("emailSubject").value.trim();
+        const template = document.getElementById("emailTemplate").value.trim();
+        const statusEl = document.getElementById("testStatus");
+
+        if (!toEmail) { statusEl.textContent = "Informe o email de destino."; statusEl.style.color = "var(--bad)"; return; }
+        if (!subject) { statusEl.textContent = "Preencha o assunto antes de testar."; statusEl.style.color = "var(--bad)"; return; }
+        if (!template) { statusEl.textContent = "Preencha o corpo antes de testar."; statusEl.style.color = "var(--bad)"; return; }
+
+        statusEl.textContent = "Enviando...";
+        statusEl.style.color = "var(--muted)";
+        document.getElementById("testSendButton").disabled = true;
+
+        try {
+          const { message } = await requestJson("/api/email/test", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ toEmail, subject, template })
+          });
+          statusEl.textContent = `✓ ${message}`;
+          statusEl.style.color = "var(--good)";
+        } catch (e) {
+          statusEl.textContent = `Erro: ${e.message}`;
+          statusEl.style.color = "var(--bad)";
+        } finally {
+          document.getElementById("testSendButton").disabled = false;
+        }
+      });
+
+      document.getElementById("runButton").addEventListener("click", () => dispatchCampaign(false));
+      document.getElementById("dryRunButton").addEventListener("click", () => dispatchCampaign(true));
+      document.getElementById("prevHistory").addEventListener("click", () => {
+        if (state.historyOffset > 0) { state.historyOffset -= state.historyLimit; loadHistory(); }
+      });
+      document.getElementById("nextHistory").addEventListener("click", () => {
+        state.historyOffset += state.historyLimit; loadHistory();
+      });
+      document.getElementById("refreshHistory").addEventListener("click", loadHistory);
+      document.getElementById("refreshAnalytics").addEventListener("click", loadAnalytics);
+      document.getElementById("analyticsDays").addEventListener("change", loadAnalytics);
+
+      (async () => {
+        await Promise.all([loadStatus(), loadSources(), loadHistory(), loadAnalytics()]);
+        setInterval(loadStatus, 30000);
+      })();
+    </script>
+  </body>
+</html>

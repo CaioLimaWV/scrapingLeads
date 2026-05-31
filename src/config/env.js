@@ -17,5 +17,32 @@ module.exports = {
     retryBaseDelayMs: toNumber(process.env.SCRAPE_RETRY_BASE_DELAY_MS, 1000),
     concurrency: toNumber(process.env.SCRAPE_CONCURRENCY, 2),
     maxItems: toNumber(process.env.SCRAPE_MAX_ITEMS, 80)
+  },
+  email: {
+    from: process.env.EMAIL_FROM || "",
+    fromName: process.env.EMAIL_FROM_NAME || "Contato",
+    dailyLimit: toNumber(process.env.EMAIL_DAILY_LIMIT, 50),
+    delayMinMs: toNumber(process.env.EMAIL_DELAY_MIN_MS, 120000),
+    delayMaxMs: toNumber(process.env.EMAIL_DELAY_MAX_MS, 300000),
+    // quando em servidor público, preencher com a URL base (ex: https://seuapp.com)
+    // deixar vazio desabilita tracking de abertura e clique
+    baseUrl: process.env.APP_BASE_URL ? process.env.APP_BASE_URL.replace(/\/$/, "") : "",
+    providers: [
+      {
+        name: "brevo",
+        apiKey: process.env.BREVO_API_KEY || "",
+        dailyLimit: toNumber(process.env.BREVO_DAILY_LIMIT, 300)
+      },
+      {
+        name: "mailjet",
+        apiKey: process.env.MAILJET_API_KEY || "",
+        secretKey: process.env.MAILJET_SECRET_KEY || "",
+        dailyLimit: toNumber(process.env.MAILJET_DAILY_LIMIT, 200)
+      }
+    ].filter((p) => {
+      if (p.name === "brevo") return !!p.apiKey;
+      if (p.name === "mailjet") return !!p.apiKey && !!p.secretKey;
+      return false;
+    })
   }
 };

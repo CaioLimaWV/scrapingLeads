@@ -9,6 +9,8 @@ const executionRoutes = require("./routes/executionsRoutes");
 const sourcesRoutes = require("./routes/sourcesRoutes");
 const dashboardRoutes = require("./routes/dashboardRoutes");
 const scrapeRoutes = require("./routes/scrapeRoutes");
+const emailRoutes = require("./routes/emailRoutes");
+const trackingRoutes = require("./routes/trackingRoutes");
 
 function createApp() {
   const app = express();
@@ -37,6 +39,8 @@ function createApp() {
   app.use("/api/sources", sourcesRoutes);
   app.use("/api/dashboard", dashboardRoutes);
   app.use("/api/scrape", scrapeRoutes);
+  app.use("/api/email", emailRoutes);
+  app.use("/track", trackingRoutes);
 
   app.use("/panel", express.static(path.join(__dirname, "public"), { extensions: ["html"] }));
 
