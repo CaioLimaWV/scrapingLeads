@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Funil e Engajamento</title>
+    <link rel="stylesheet" href="./styles.css" />
+    <style>
+      .badge { display:inline-block;padding:2px 8px;border-radius:99px;font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.04em }
+      .temp-cold { background:rgba(120,160,220,.2); color:#8cb4ff }
+      .temp-warm { background:rgba(240,180,41,.2); color:#f0b429 }
+      .temp-hot { background:rgba(255,90,90,.2); color:#ff7a7a }
+      .temp-lost { background:rgba(120,120,120,.25); color:#aaa }
+      .funnel-top { color:var(--muted) }
+      .funnel-middle { color:#8cb4ff }
+      .funnel-bottom { color:var(--good) }
+      .funnel-lost { color:var(--bad) }
+      .action-cell { font-size:0.78rem; color:var(--muted); max-width:220px }
+      .matrix-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:10px; margin-top:12px }
+      .matrix-item { background:var(--bg-2); border:1px solid var(--border); border-radius:8px; padding:10px; text-align:center }
+      .matrix-num { font-size:1.3rem; font-weight:700; font-family:"IBM Plex Mono",monospace }
+      .matrix-label { font-size:0.72rem; color:var(--muted); margin-top:4px }
+      .nav-links { display:flex; gap:1rem; align-items:center }
+      .nav-links a { color:var(--muted); font-size:0.85rem; text-decoration:none }
+      .nav-links a.active { color:var(--ink); font-weight:600 }
+    </style>
+  </head>
+  <body>
+    <div class="bg-orb orb-a"></div>
+    <div class="bg-orb orb-b"></div>
+
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">Lead Operations</p>
+        <h1>Funil &amp; Engajamento</h1>
+      </div>
+      <div class="nav-links">
+        <a href="/panel/">Scraping</a>
+        <a href="/panel/engagement" class="active">Funil</a>
+        <a href="/panel/whatsapp">WhatsApp</a>
+        <a href="/panel/email">Email</a>
+      </div>
+    </header>
+
+    <main class="layout">
+      <section class="cards">
+        <article class="card"><h2>Frio</h2><p class="metric" id="metricCold">-</p></article>
+        <article class="card"><h2>Morno</h2><p class="metric" id="metricWarm">-</p></article>
+        <article class="card"><h2>Quente</h2><p class="metric" id="metricHot">-</p></article>
+        <article class="card"><h2>Topo funil</h2><p class="metric" id="metricTop">-</p></article>
+        <article class="card"><h2>Meio funil</h2><p class="metric" id="metricMiddle">-</p></article>
+        <article class="card"><h2>Fundo funil</h2><p class="metric" id="metricBottom">-</p></article>
+      </section>
+
+      <section class="panel run-panel">
+        <div>
+          <h3>Filtros &amp; ações</h3>
+          <p>Score = interações de email + contato WhatsApp. Quente + fundo = prioridade máxima.</p>
+        </div>
+        <div class="run-controls">
+          <label>Temperatura
+            <select id="filterTemperature">
+              <option value="">Todas</option>
+              <option value="cold">Frio</option>
+              <option value="warm">Morno</option>
+              <option value="hot">Quente</option>
+              <option value="lost">Fora (descadastro)</option>
+            </select>
+          </label>
+          <label>Funil
+            <select id="filterFunnel">
+              <option value="">Todos</option>
+              <option value="top">Topo</option>
+              <option value="middle">Meio</option>
+              <option value="bottom">Fundo</option>
+              <option value="lost">Perdido</option>
+            </select>
+          </label>
+          <label>Token (recalcular)
+            <input id="runToken" type="password" placeholder="x-panel-token" />
+          </label>
+          <div class="run-actions">
+            <button id="refreshBtn" type="button">Atualizar</button>
+            <button id="recalculateBtn" type="button" class="ghost">Recalcular todos</button>
+          </div>
+        </div>
+        <p id="statusMsg" class="status"></p>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h3>Leads por engajamento</h3>
+          <div class="row-gap">
+            <button id="prevPage" type="button" class="ghost">Anterior</button>
+            <span id="pageLabel" class="page-label">Página 1</span>
+            <button id="nextPage" type="button" class="ghost">Próxima</button>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Nome</th>
+                <th>Email</th>
+                <th>Score</th>
+                <th>Temp.</th>
+                <th>Funil</th>
+                <th>Próxima ação</th>
+                <th>Última interação</th>
+              </tr>
+            </thead>
+            <tbody id="leadsBody"></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+
+    <script>
+      const state = { offset: 0, limit: 30 };
+
+      function tempBadge(t) {
+        const labels = { cold: "Frio", warm: "Morno", hot: "Quente", lost: "Fora" };
+        return `<span class="badge temp-${t}">${labels[t] || t}</span>`;
+      }
+
+      function funnelLabel(f) {
+        const labels = { top: "Topo", middle: "Meio", bottom: "Fundo", lost: "Perdido" };
+        return `<span class="funnel-${f}">${labels[f] || f}</span>`;
+      }
+
+      function fmtDate(v) {
+        if (!v) return "—";
+        return new Date(v).toLocaleString("pt-BR");
+      }
+
+      async function requestJson(url, options = {}) {
+        const res = await fetch(url, options);
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(body.message || res.statusText);
+        }
+        return res.json();
+      }
+
+      async function loadSummary() {
+        const { data } = await requestJson("/api/leads/engagement/summary");
+        document.getElementById("metricCold").textContent = data.byTemperature.cold || 0;
+        document.getElementById("metricWarm").textContent = data.byTemperature.warm || 0;
+        document.getElementById("metricHot").textContent = data.byTemperature.hot || 0;
+        document.getElementById("metricTop").textContent = data.byFunnel.top || 0;
+        document.getElementById("metricMiddle").textContent = data.byFunnel.middle || 0;
+        document.getElementById("metricBottom").textContent = data.byFunnel.bottom || 0;
+      }
+
+      async function loadLeads() {
+        const qs = new URLSearchParams({ limit: String(state.limit), offset: String(state.offset) });
+        const temp = document.getElementById("filterTemperature").value;
+        const funnel = document.getElementById("filterFunnel").value;
+        if (temp) qs.set("temperature", temp);
+        if (funnel) qs.set("funnel_stage", funnel);
+
+        const { data } = await requestJson(`/api/leads/engagement?${qs}`);
+        const tbody = document.getElementById("leadsBody");
+        tbody.innerHTML = "";
+
+        for (const row of data) {
+          const tr = document.createElement("tr");
+          tr.innerHTML = `
+            <td>${row.id}</td>
+            <td>${row.name || "—"}</td>
+            <td>${row.email}</td>
+            <td><strong>${row.engagement_score ?? 0}</strong></td>
+            <td>${tempBadge(row.temperature || "cold")}</td>
+            <td>${funnelLabel(row.funnel_stage || "top")}</td>
+            <td class="action-cell">${row.next_action || "—"}</td>
+            <td>${fmtDate(row.last_engagement_at)}</td>`;
+          tbody.appendChild(tr);
+        }
+
+        const page = Math.floor(state.offset / state.limit) + 1;
+        document.getElementById("pageLabel").textContent = `Página ${page}`;
+        document.getElementById("prevPage").disabled = state.offset === 0;
+        document.getElementById("nextPage").disabled = data.length < state.limit;
+      }
+
+      async function refreshAll() {
+        await Promise.all([loadSummary(), loadLeads()]);
+      }
+
+      document.getElementById("refreshBtn").addEventListener("click", () => {
+        state.offset = 0;
+        refreshAll();
+      });
+      document.getElementById("filterTemperature").addEventListener("change", () => { state.offset = 0; loadLeads(); });
+      document.getElementById("filterFunnel").addEventListener("change", () => { state.offset = 0; loadLeads(); });
+      document.getElementById("prevPage").addEventListener("click", () => {
+        state.offset = Math.max(0, state.offset - state.limit);
+        loadLeads();
+      });
+      document.getElementById("nextPage").addEventListener("click", () => {
+        state.offset += state.limit;
+        loadLeads();
+      });
+
+      document.getElementById("recalculateBtn").addEventListener("click", async () => {
+        const el = document.getElementById("statusMsg");
+        el.textContent = "Recalculando...";
+        el.style.color = "var(--muted)";
+        try {
+          const token = document.getElementById("runToken").value.trim();
+          const { data } = await requestJson("/api/leads/engagement/recalculate", {
+            method: "POST",
+            headers: { ...(token ? { "x-panel-token": token } : {}) }
+          });
+          el.textContent = `Recalculado: ${data.processed} leads.`;
+          el.style.color = "var(--good)";
+          state.offset = 0;
+          await refreshAll();
+        } catch (e) {
+          el.textContent = `Erro: ${e.message}`;
+          el.style.color = "var(--bad)";
+        }
+      });
+
+      refreshAll();
+    </script>
+  </body>
+</html>

@@ -1,0 +1,222 @@
+const db = require("../database/knex");
+const { slugifyUtm } = require("../utils/emailUtm");
+
+function parseJsonArray(value) {
+  if (!value) return [];
+  if (Array.isArray(value)) return value;
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function normalizeCampaignRow(row) {
+  if (!row) return row;
+  return {
+    ...row,
+    source_ids: parseJsonArray(row.source_ids),
+    field_areas: parseJsonArray(row.field_areas)
+  };
+}
+
+function buildUniqueSlug(name, existingId = null) {
+  let slug = slugifyUtm(name, "campanha");
+  return slug;
+}
+
+async function ensureUniqueSlug(slug, excludeId = null) {
+  let candidate = slug;
+  let suffix = 2;
+  while (true) {
+    const query = db("email_campaigns").where({ slug: candidate }).first();
+    const existing = await query;
+    if (!existing || (excludeId && existing.id === excludeId)) return candidate;
+    candidate = `${slug}-${suffix}`;
+    suffix += 1;
+  }
+}
+
+function applySegmentFilters(query, { sourceIds, fieldAreas }) {
+  const ids = (sourceIds || []).map(Number).filter((id) => Number.isInteger(id) && id > 0);
+  const areas = (fieldAreas || []).map((a) => String(a).trim().toLowerCase()).filter(Boolean);
+
+  if (!ids.length && !areas.length) return query;
+
+  query.join("lead_sources as ls", "ls.id", "leads.source_id");
+  query.andWhere(function segmentWhere() {
+    if (ids.length) this.whereIn("leads.source_id", ids);
+    if (areas.length) {
+      if (ids.length) this.orWhereIn("ls.field_area", areas);
+      else this.whereIn("ls.field_area", areas);
+    }
+  });
+
+  return query;
+}
+
+function baseEligibleQuery({ sourceIds, fieldAreas, campaignId }) {
+  let query = db("leads")
+    .where("leads.is_valid", true)
+    .where("leads.is_active", true)
+    .where("leads.email_unsubscribed", false)
+    .whereRaw("leads.email_normalized NOT LIKE ?", ["%@mapscraper.local"])
+    .whereRaw("leads.email_normalized NOT LIKE ?", ["%@lead.local"]);
+
+  query = applySegmentFilters(query, { sourceIds, fieldAreas });
+
+  if (campaignId) {
+    query.whereNotExists(function () {
+      this.select("id")
+        .from("email_sends")
+        .whereRaw("email_sends.lead_id = leads.id")
+        .where("email_sends.campaign_id", campaignId)
+        .where("email_sends.status", "sent");
+    });
+  } else {
+    query.whereNotExists(function () {
+      this.select("id")
+        .from("email_sends")
+        .whereRaw("email_sends.lead_id = leads.id")
+        .where("email_sends.status", "sent");
+    });
+  }
+
+  return query;
+}
+
+async function countEligibleForCampaign(campaign) {
+  const row = await baseEligibleQuery({
+    sourceIds: campaign.source_ids,
+    fieldAreas: campaign.field_areas,
+    campaignId: campaign.id
+  })
+    .count("leads.id as count")
+    .first();
+  return Number(row?.count || 0);
+}
+
+async function listCampaigns({ includeArchived = false } = {}) {
+  let query = db("email_campaigns").select("*").orderBy("updated_at", "desc");
+  if (!includeArchived) {
+    query = query.whereNot({ status: "archived" });
+  }
+  const rows = await query;
+  return rows.map(normalizeCampaignRow);
+}
+
+async function getCampaignById(id) {
+  const row = await db("email_campaigns").where({ id }).first();
+  return normalizeCampaignRow(row);
+}
+
+async function createCampaign(payload) {
+  const slug = await ensureUniqueSlug(buildUniqueSlug(payload.name));
+  const [id] = await db("email_campaigns").insert({
+    name: payload.name.trim(),
+    slug,
+    subject: payload.subject.trim(),
+    template: payload.template.trim(),
+    source_ids: JSON.stringify(payload.sourceIds || []),
+    field_areas: JSON.stringify(payload.fieldAreas || []),
+    daily_batch_size: payload.dailyBatchSize || null,
+    status: payload.status || "active",
+    notes: payload.notes || null
+  });
+  return getCampaignById(id);
+}
+
+async function updateCampaign(id, payload) {
+  const existing = await getCampaignById(id);
+  if (!existing) return null;
+
+  const updates = {};
+  if (payload.name !== undefined) {
+    updates.name = payload.name.trim();
+    if (payload.name.trim() !== existing.name) {
+      updates.slug = await ensureUniqueSlug(buildUniqueSlug(payload.name), id);
+    }
+  }
+  if (payload.subject !== undefined) updates.subject = payload.subject.trim();
+  if (payload.template !== undefined) updates.template = payload.template.trim();
+  if (payload.sourceIds !== undefined) updates.source_ids = JSON.stringify(payload.sourceIds || []);
+  if (payload.fieldAreas !== undefined) updates.field_areas = JSON.stringify(payload.fieldAreas || []);
+  if (payload.dailyBatchSize !== undefined) updates.daily_batch_size = payload.dailyBatchSize || null;
+  if (payload.status !== undefined) updates.status = payload.status;
+  if (payload.notes !== undefined) updates.notes = payload.notes || null;
+
+  if (Object.keys(updates).length) {
+    await db("email_campaigns").where({ id }).update(updates);
+  }
+  return getCampaignById(id);
+}
+
+async function markCampaignDispatched(id) {
+  await db("email_campaigns").where({ id }).update({ last_dispatched_at: new Date() });
+}
+
+async function getCampaignStats(campaignId) {
+  const campaign = await getCampaignById(campaignId);
+  if (!campaign) return null;
+
+  const [sentRow, failedRow, eligible] = await Promise.all([
+    db("email_sends").where({ campaign_id: campaignId, status: "sent" }).count("id as count").first(),
+    db("email_sends").where({ campaign_id: campaignId, status: "failed" }).count("id as count").first(),
+    countEligibleForCampaign(campaign)
+  ]);
+
+  const sent = Number(sentRow?.count || 0);
+  const failed = Number(failedRow?.count || 0);
+
+  const eventRows = await db("email_events as ee")
+    .join("email_sends as es", "es.id", "ee.email_send_id")
+    .where("es.campaign_id", campaignId)
+    .select("ee.event_type")
+    .count("ee.id as cnt")
+    .groupBy("ee.event_type");
+
+  const events = { open: 0, click: 0, unsubscribe: 0 };
+  for (const row of eventRows) {
+    events[row.event_type] = Number(row.cnt);
+  }
+
+  const lastSend = await db("email_sends")
+    .where({ campaign_id: campaignId, status: "sent" })
+    .max("sent_at as last_sent_at")
+    .first();
+
+  return {
+    campaignId,
+    sent,
+    failed,
+    eligible,
+    opens: events.open,
+    clicks: events.click,
+    unsubscribes: events.unsubscribe,
+    openRate: sent ? Math.round((events.open / sent) * 1000) / 10 : 0,
+    clickRate: sent ? Math.round((events.click / sent) * 1000) / 10 : 0,
+    lastSentAt: lastSend?.last_sent_at || null
+  };
+}
+
+async function listCampaignsWithStats({ includeArchived = false } = {}) {
+  const campaigns = await listCampaigns({ includeArchived });
+  const stats = await Promise.all(campaigns.map((c) => getCampaignStats(c.id)));
+  return campaigns.map((campaign, index) => ({
+    ...campaign,
+    stats: stats[index]
+  }));
+}
+
+module.exports = {
+  listCampaigns,
+  listCampaignsWithStats,
+  getCampaignById,
+  createCampaign,
+  updateCampaign,
+  markCampaignDispatched,
+  getCampaignStats,
+  countEligibleForCampaign,
+  parseJsonArray
+};

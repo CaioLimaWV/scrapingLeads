@@ -19,9 +19,10 @@ async function hasBeenEmailed(leadId) {
   return !!row;
 }
 
-async function logEmailSend(trx, { leadId, subject, bodyPreview, status, errorMessage, sentAt, trackingToken, provider }) {
+async function logEmailSend(trx, { leadId, subject, bodyPreview, status, errorMessage, sentAt, trackingToken, provider, campaignId }) {
   const rows = await (trx || db)("email_sends").insert({
     lead_id: leadId,
+    campaign_id: campaignId || null,
     subject,
     body_preview: bodyPreview ? String(bodyPreview).slice(0, 500) : null,
     status,
@@ -58,29 +59,53 @@ async function recordEvent(emailSendId, { eventType, urlClicked, ip }) {
     ip: ip || null,
     occurred_at: new Date()
   });
+  return emailSendId;
 }
 
-async function listEligibleLeads({ sourceId, limit }) {
+async function listEligibleLeads({ sourceId, sourceIds, fieldAreas, campaignId, limit }) {
+  const ids = [
+    ...(sourceIds || []).map(Number).filter((id) => Number.isInteger(id) && id > 0),
+    ...(sourceId ? [Number(sourceId)] : [])
+  ];
+  const areas = (fieldAreas || []).map((a) => String(a).trim().toLowerCase()).filter(Boolean);
+
   let query = db("leads")
-    .select("id", "name", "email", "email_normalized")
-    .where("is_valid", true)
-    .where("is_active", true)
-    .where("email_unsubscribed", false)
-    .whereRaw("email_normalized NOT LIKE ?", ["%@mapscraper.local"])
-    .whereRaw("email_normalized NOT LIKE ?", ["%@lead.local"])
-    .whereNotExists(function () {
+    .select("leads.id", "leads.name", "leads.email", "leads.email_normalized")
+    .where("leads.is_valid", true)
+    .where("leads.is_active", true)
+    .where("leads.email_unsubscribed", false)
+    .whereRaw("leads.email_normalized NOT LIKE ?", ["%@mapscraper.local"])
+    .whereRaw("leads.email_normalized NOT LIKE ?", ["%@lead.local"]);
+
+  if (ids.length || areas.length) {
+    query = query.join("lead_sources as ls", "ls.id", "leads.source_id");
+    query.andWhere(function segmentWhere() {
+      if (ids.length) this.whereIn("leads.source_id", ids);
+      if (areas.length) {
+        if (ids.length) this.orWhereIn("ls.field_area", areas);
+        else this.whereIn("ls.field_area", areas);
+      }
+    });
+  }
+
+  if (campaignId) {
+    query.whereNotExists(function () {
+      this.select("id")
+        .from("email_sends")
+        .whereRaw("email_sends.lead_id = leads.id")
+        .where("email_sends.campaign_id", campaignId)
+        .where("email_sends.status", "sent");
+    });
+  } else {
+    query.whereNotExists(function () {
       this.select("id")
         .from("email_sends")
         .whereRaw("email_sends.lead_id = leads.id")
         .where("email_sends.status", "sent");
-    })
-    .limit(limit);
-
-  if (sourceId) {
-    query = query.where("source_id", sourceId);
+    });
   }
 
-  return query;
+  return query.limit(limit);
 }
 
 async function listEmailSends({ limit = 50, offset = 0 }) {
@@ -125,6 +150,12 @@ async function listEmailSends({ limit = 50, offset = 0 }) {
   }));
 }
 
+function normalizeDayKey(value) {
+  if (!value) return "";
+  if (value instanceof Date) return value.toISOString().slice(0, 10);
+  return String(value).slice(0, 10);
+}
+
 async function getAnalyticsByDay(days = 7) {
   const since = new Date();
   since.setDate(since.getDate() - days);
@@ -148,13 +179,15 @@ async function getAnalyticsByDay(days = 7) {
 
   const days_map = {};
   for (const s of sends) {
-    days_map[s.day] = { day: s.day, sent: Number(s.total_sent), opens: 0, clicks: 0, unsubscribes: 0 };
+    const day = normalizeDayKey(s.day);
+    days_map[day] = { day, sent: Number(s.total_sent), opens: 0, clicks: 0, unsubscribes: 0 };
   }
   for (const e of events) {
-    if (!days_map[e.day]) days_map[e.day] = { day: e.day, sent: 0, opens: 0, clicks: 0, unsubscribes: 0 };
-    if (e.event_type === "open") days_map[e.day].opens = Number(e.cnt);
-    if (e.event_type === "click") days_map[e.day].clicks = Number(e.cnt);
-    if (e.event_type === "unsubscribe") days_map[e.day].unsubscribes = Number(e.cnt);
+    const day = normalizeDayKey(e.day);
+    if (!days_map[day]) days_map[day] = { day, sent: 0, opens: 0, clicks: 0, unsubscribes: 0 };
+    if (e.event_type === "open") days_map[day].opens = Number(e.cnt);
+    if (e.event_type === "click") days_map[day].clicks = Number(e.cnt);
+    if (e.event_type === "unsubscribe") days_map[day].unsubscribes = Number(e.cnt);
   }
 
   return Object.values(days_map).sort((a, b) => a.day.localeCompare(b.day));

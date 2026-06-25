@@ -278,6 +278,16 @@ async function loadExecutions() {
   elements.nextExecutions.disabled = rows.length < state.executionsPagination.limit;
 }
 
+function formatTemperature(value) {
+  const map = { cold: "Frio", warm: "Morno", hot: "Quente", lost: "Fora" };
+  return map[value] || value || "-";
+}
+
+function formatFunnel(value) {
+  const map = { top: "Topo", middle: "Meio", bottom: "Fundo", lost: "Perdido" };
+  return map[value] || value || "-";
+}
+
 function renderLeads(rows) {
   elements.leadsBody.textContent = "";
 
@@ -288,6 +298,9 @@ function renderLeads(rows) {
       row.name,
       row.email,
       row.phone || "-",
+      row.engagement_score ?? 0,
+      formatTemperature(row.temperature),
+      formatFunnel(row.funnel_stage),
       row.gender || "-",
       state.sourceMap.get(row.source_id) || `#${row.source_id}`,
       toLocalDate(row.created_at)

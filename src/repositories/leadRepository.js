@@ -109,7 +109,14 @@ async function insertDeduplicationLog(trx, payload) {
   });
 }
 
-async function listLeads({ limit = 50, offset = 0, sourceId = null, gender = null }) {
+async function listLeads({
+  limit = 50,
+  offset = 0,
+  sourceId = null,
+  gender = null,
+  temperature = null,
+  funnelStage = null
+}) {
   const query = db("leads")
     .select(
       "id",
@@ -119,8 +126,16 @@ async function listLeads({ limit = 50, offset = 0, sourceId = null, gender = nul
       "source_id",
       "created_at",
       "is_duplicate_of",
+      "engagement_score",
+      "temperature",
+      "funnel_stage",
+      "last_engagement_at",
+      "next_action",
+      "contacted",
+      "email_unsubscribed",
       db.raw("JSON_UNQUOTE(JSON_EXTRACT(raw_data, '$.gender')) as gender")
     )
+    .orderBy("engagement_score", "desc")
     .orderBy("id", "desc")
     .limit(limit)
     .offset(offset);
@@ -133,7 +148,25 @@ async function listLeads({ limit = 50, offset = 0, sourceId = null, gender = nul
     query.whereRaw("JSON_UNQUOTE(JSON_EXTRACT(raw_data, '$.gender')) = ?", [gender]);
   }
 
+  if (temperature) {
+    query.where({ temperature });
+  }
+
+  if (funnelStage) {
+    query.where({ funnel_stage: funnelStage });
+  }
+
   return query;
+}
+
+async function listEngagementLeads({
+  limit = 50,
+  offset = 0,
+  sourceId = null,
+  temperature = null,
+  funnelStage = null
+}) {
+  return listLeads({ limit, offset, sourceId, temperature, funnelStage, gender: null });
 }
 
 async function countLeads() {
@@ -182,21 +215,36 @@ async function countInferredGenderLeads() {
 
 async function listUncontactedLeadsWithPhone(limit = 100) {
   return db("leads")
-    .select("id", "name", "phone", "phone_normalized")
+    .select(
+      "id",
+      "name",
+      "phone",
+      "phone_normalized",
+      "engagement_score",
+      "temperature",
+      "funnel_stage",
+      "next_action"
+    )
     .where("contacted", false)
+    .where("email_unsubscribed", false)
+    .whereNotIn("temperature", ["lost"])
     .whereNotNull("phone_normalized")
     .where("phone_normalized", "!=", "")
+    .orderBy("engagement_score", "desc")
     .orderBy("id", "desc")
     .limit(limit);
 }
 
 async function markLeadAsContacted(id) {
-  return db("leads")
+  const { recalculateLeadEngagement } = require("../services/leadScoringService");
+  await db("leads")
     .where({ id })
     .update({
       contacted: true,
       contacted_at: db.fn.now()
     });
+  await recalculateLeadEngagement(id);
+  return true;
 }
 
 module.exports = {
@@ -205,6 +253,7 @@ module.exports = {
   insertLead,
   insertDeduplicationLog,
   listLeads,
+  listEngagementLeads,
   countLeads,
   countFemaleLeads,
   countMaleLeads,

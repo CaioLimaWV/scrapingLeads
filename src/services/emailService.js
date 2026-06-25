@@ -1,6 +1,8 @@
 const crypto = require("crypto");
 const env = require("../config/env");
 const logger = require("../config/logger");
+const db = require("../database/knex");
+const { recalculateLeadEngagement } = require("./leadScoringService");
 const {
   countSentToday,
   logEmailSend,
@@ -11,6 +13,11 @@ const {
   getCapacityMap,
   getTotalRemaining
 } = require("./email/providerRegistry");
+const { injectPortfolioUtms } = require("../utils/emailUtm");
+const {
+  getCampaignById,
+  markCampaignDispatched
+} = require("../repositories/campaignRepository");
 
 function randomDelay(minMs, maxMs) {
   const ms = Math.floor(Math.random() * (maxMs - minMs + 1)) + minMs;
@@ -79,9 +86,10 @@ function injectTracking(html, token, baseUrl) {
   return tracked.replace(/<\/body>/i, `${pixel}</body>`) + (tracked.includes("</body>") ? "" : pixel);
 }
 
-function buildMailOptions({ from, fromName, to, subject, bodyHtml, token, baseUrl, unsubUrl }) {
-  const htmlWithTracking = injectTracking(buildHtmlEmail(bodyHtml, unsubUrl), token, baseUrl);
-  const text = toPlainText(bodyHtml);
+function buildMailOptions({ from, fromName, to, subject, bodyHtml, token, baseUrl, unsubUrl, utmCampaign }) {
+  const bodyWithUtm = injectPortfolioUtms(bodyHtml, subject, utmCampaign);
+  const htmlWithTracking = injectTracking(buildHtmlEmail(bodyWithUtm, unsubUrl), token, baseUrl);
+  const text = toPlainText(bodyWithUtm);
 
   const headers = {};
   if (unsubUrl) {
@@ -99,32 +107,85 @@ function buildMailOptions({ from, fromName, to, subject, bodyHtml, token, baseUr
   };
 }
 
-async function runEmailCampaign({ sourceId, subject, template, dryRun = false }) {
-  const totals = { sent: 0, failed: 0, skipped: 0, remaining: 0, byProvider: {} };
+async function sendMonitorCopy({ subject, template, utmCampaign }) {
+  const { monitorTo, monitorName, baseUrl } = env.email;
+  if (!monitorTo) return false;
+
+  const token = generateToken();
+  const fakeLead = { name: monitorName };
+  const bodyHtml = toHtml(applyTemplate(template, fakeLead));
+  const unsubUrl = baseUrl ? `${baseUrl}/track/unsub/${token}` : null;
+
+  const mailOptions = buildMailOptions({
+    from: env.email.from,
+    fromName: env.email.fromName,
+    to: monitorTo,
+    subject,
+    bodyHtml,
+    token,
+    baseUrl,
+    unsubUrl,
+    utmCampaign
+  });
+
+  const { providerName } = await sendWithFallback(mailOptions);
+  logger.info({ to: monitorTo, provider: providerName }, "Monitor copy sent");
+  return true;
+}
+
+async function runEmailCampaign({
+  sourceId,
+  sourceIds,
+  fieldAreas,
+  subject,
+  template,
+  dryRun = false,
+  campaignId = null,
+  utmCampaign = null,
+  batchLimit = null
+}) {
+  const totals = { sent: 0, failed: 0, skipped: 0, remaining: 0, byProvider: {}, monitorSent: false };
 
   const sentToday = await countSentToday();
   const { dailyLimit } = env.email;
   const providersRemaining = await getTotalRemaining();
-  const available = Math.max(0, Math.min(dailyLimit - sentToday, providersRemaining));
+  const globalAvailable = Math.max(0, Math.min(dailyLimit - sentToday, providersRemaining));
+  const available = batchLimit ? Math.min(globalAvailable, batchLimit) : globalAvailable;
+  const wantsMonitor = !dryRun && !!env.email.monitorTo;
+  const leadBatchLimit = wantsMonitor ? Math.max(0, available - 1) : available;
 
-  if (available <= 0) {
+  if (leadBatchLimit <= 0 && !wantsMonitor) {
     logger.info(
-      { sentToday, dailyLimit, providersRemaining },
+      { sentToday, dailyLimit, providersRemaining, batchLimit },
       "Email daily capacity reached, skipping campaign"
     );
     totals.remaining = 0;
     return totals;
   }
 
-  const leads = await listEligibleLeads({ sourceId, limit: available });
+  const leads = await listEligibleLeads({
+    sourceId,
+    sourceIds,
+    fieldAreas,
+    campaignId,
+    limit: leadBatchLimit
+  });
 
-  if (leads.length === 0) {
-    logger.info("No eligible leads found for email campaign");
+  if (leads.length === 0 && !wantsMonitor) {
+    logger.info({ campaignId }, "No eligible leads found for email campaign");
     totals.remaining = available;
     return totals;
   }
 
   const { baseUrl } = env.email;
+
+  if (wantsMonitor) {
+    try {
+      totals.monitorSent = await sendMonitorCopy({ subject, template, utmCampaign });
+    } catch (err) {
+      logger.error({ err, to: env.email.monitorTo }, "Failed to send monitor copy");
+    }
+  }
 
   for (const lead of leads) {
     const currentSentToday = await countSentToday();
@@ -139,17 +200,7 @@ async function runEmailCampaign({ sourceId, subject, template, dryRun = false })
     const bodyPreview = toPlainText(bodyHtml).slice(0, 500);
 
     if (dryRun) {
-      logger.info({ leadId: lead.id, email: lead.email }, "[dry-run] Would send email");
-      await logEmailSend(null, {
-        leadId: lead.id,
-        subject,
-        bodyPreview,
-        status: "skipped",
-        errorMessage: "dry-run",
-        sentAt: null,
-        trackingToken: null,
-        provider: null
-      });
+      logger.info({ leadId: lead.id, email: lead.email, campaignId }, "[dry-run] Would send email");
       totals.skipped += 1;
       continue;
     }
@@ -162,7 +213,8 @@ async function runEmailCampaign({ sourceId, subject, template, dryRun = false })
       bodyHtml,
       token,
       baseUrl,
-      unsubUrl
+      unsubUrl,
+      utmCampaign
     });
 
     try {
@@ -170,6 +222,7 @@ async function runEmailCampaign({ sourceId, subject, template, dryRun = false })
 
       await logEmailSend(null, {
         leadId: lead.id,
+        campaignId,
         subject,
         bodyPreview,
         status: "sent",
@@ -181,12 +234,17 @@ async function runEmailCampaign({ sourceId, subject, template, dryRun = false })
 
       totals.sent += 1;
       totals.byProvider[providerName] = (totals.byProvider[providerName] || 0) + 1;
-      logger.info({ leadId: lead.id, email: lead.email, provider: providerName }, "Email sent");
+      logger.info({ leadId: lead.id, email: lead.email, provider: providerName, campaignId }, "Email sent");
+
+      recalculateLeadEngagement(lead.id).catch((err) =>
+        logger.error({ err, leadId: lead.id }, "Failed to recalculate engagement after email send")
+      );
 
       await randomDelay(env.email.delayMinMs, env.email.delayMaxMs);
     } catch (err) {
       await logEmailSend(null, {
         leadId: lead.id,
+        campaignId,
         subject,
         bodyPreview,
         status: "failed",
@@ -196,7 +254,7 @@ async function runEmailCampaign({ sourceId, subject, template, dryRun = false })
         provider: null
       });
       totals.failed += 1;
-      logger.error({ leadId: lead.id, err }, "Failed to send email");
+      logger.error({ leadId: lead.id, err, campaignId }, "Failed to send email");
 
       if (err.providersExhausted) {
         totals.skipped += leads.length - totals.sent - totals.failed;
@@ -205,11 +263,40 @@ async function runEmailCampaign({ sourceId, subject, template, dryRun = false })
     }
   }
 
+  if (!dryRun && campaignId && totals.sent > 0) {
+    await markCampaignDispatched(campaignId);
+  }
+
   const finalSentToday = await countSentToday();
   const finalProvidersRemaining = await getTotalRemaining();
   totals.remaining = Math.max(0, Math.min(dailyLimit - finalSentToday, finalProvidersRemaining));
 
   return totals;
+}
+
+async function dispatchSavedCampaign(campaignId, { dryRun = false } = {}) {
+  const campaign = await getCampaignById(campaignId);
+  if (!campaign) {
+    const err = new Error("Campanha não encontrada");
+    err.statusCode = 404;
+    throw err;
+  }
+  if (campaign.status !== "active") {
+    const err = new Error("Campanha não está ativa");
+    err.statusCode = 400;
+    throw err;
+  }
+
+  return runEmailCampaign({
+    sourceIds: campaign.source_ids,
+    fieldAreas: campaign.field_areas,
+    subject: campaign.subject,
+    template: campaign.template,
+    dryRun,
+    campaignId: campaign.id,
+    utmCampaign: campaign.slug,
+    batchLimit: campaign.daily_batch_size || env.email.defaultBatch
+  });
 }
 
 async function getEmailStatus() {
@@ -223,6 +310,10 @@ async function getEmailStatus() {
     dailyLimit,
     remaining: Math.max(0, Math.min(dailyLimit - sentToday, providersRemaining)),
     trackingEnabled: !!env.email.baseUrl,
+    monitorTo: env.email.monitorTo || null,
+    delayMinMs: env.email.delayMinMs,
+    delayMaxMs: env.email.delayMaxMs,
+    defaultBatch: env.email.defaultBatch,
     providers: capacity.map((c) => ({
       name: c.provider.name,
       sentToday: c.sent,
@@ -232,12 +323,43 @@ async function getEmailStatus() {
   };
 }
 
+async function resolveLeadIdForTestEmail(toEmail) {
+  const email = String(toEmail || "").trim();
+  const emailNormalized = email.toLowerCase();
+
+  const existing = await db("leads").select("id").where({ email_normalized: emailNormalized }).first();
+  if (existing) return existing.id;
+
+  const source =
+    (await db("lead_sources").select("id").where({ name: "manual-scraping" }).first()) ||
+    (await db("lead_sources").select("id").orderBy("id", "asc").first());
+
+  if (!source) {
+    throw new Error("Nenhuma fonte cadastrada para vincular email de teste");
+  }
+
+  const [insertedId] = await db("leads").insert({
+    name: "Teste Email",
+    email,
+    email_normalized: emailNormalized,
+    phone: null,
+    phone_normalized: null,
+    source_id: source.id,
+    raw_data: JSON.stringify({ origin: "email_test" }),
+    is_valid: true,
+    is_active: true
+  });
+
+  return insertedId;
+}
+
 async function sendTestEmail({ toEmail, subject, template }) {
   const token = generateToken();
   const fakeLead = { name: "Teste" };
   const bodyHtml = toHtml(applyTemplate(template, fakeLead));
   const { baseUrl } = env.email;
   const unsubUrl = baseUrl ? `${baseUrl}/track/unsub/${token}` : null;
+  const leadId = await resolveLeadIdForTestEmail(toEmail);
 
   const mailOptions = buildMailOptions({
     from: env.email.from,
@@ -251,7 +373,23 @@ async function sendTestEmail({ toEmail, subject, template }) {
   });
 
   const { providerName } = await sendWithFallback(mailOptions);
-  return { provider: providerName };
+
+  await logEmailSend(null, {
+    leadId,
+    subject: `[TESTE] ${subject}`,
+    bodyPreview: toPlainText(bodyHtml).slice(0, 500),
+    status: "sent",
+    errorMessage: null,
+    sentAt: new Date(),
+    trackingToken: token,
+    provider: providerName
+  });
+
+  recalculateLeadEngagement(leadId).catch((err) =>
+    logger.error({ err, leadId }, "Failed to recalculate engagement after test email")
+  );
+
+  return { provider: providerName, trackingToken: token };
 }
 
-module.exports = { runEmailCampaign, getEmailStatus, sendTestEmail };
+module.exports = { runEmailCampaign, dispatchSavedCampaign, getEmailStatus, sendTestEmail };

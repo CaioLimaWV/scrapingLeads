@@ -11,6 +11,7 @@
         "migrate:rollback": "knex migrate:rollback",
         "migrate:make": "knex migrate:make",
         "scrape:manual": "node scripts/scrape.js",
+        "engagement:recalculate": "node scripts/recalculate-engagement.js",
         "test": "jest --runInBand",
         "lint": "eslint src scripts"
     },

@@ -22,11 +22,15 @@ module.exports = {
     from: process.env.EMAIL_FROM || "",
     fromName: process.env.EMAIL_FROM_NAME || "Contato",
     dailyLimit: toNumber(process.env.EMAIL_DAILY_LIMIT, 50),
-    delayMinMs: toNumber(process.env.EMAIL_DELAY_MIN_MS, 120000),
-    delayMaxMs: toNumber(process.env.EMAIL_DELAY_MAX_MS, 300000),
+    delayMinMs: toNumber(process.env.EMAIL_DELAY_MIN_MS, 8000),
+    delayMaxMs: toNumber(process.env.EMAIL_DELAY_MAX_MS, 20000),
     // quando em servidor público, preencher com a URL base (ex: https://seuapp.com)
     // deixar vazio desabilita tracking de abertura e clique
     baseUrl: process.env.APP_BASE_URL ? process.env.APP_BASE_URL.replace(/\/$/, "") : "",
+    // recebe 1 cópia idêntica à dos leads em cada disparo real (não dry-run)
+    monitorTo: (process.env.EMAIL_MONITOR_TO || "").trim(),
+    monitorName: (process.env.EMAIL_MONITOR_NAME || process.env.EMAIL_FROM_NAME || "Monitor").trim(),
+    defaultBatch: toNumber(process.env.EMAIL_DEFAULT_BATCH, 50),
     providers: [
       {
         name: "brevo",

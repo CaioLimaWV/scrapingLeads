@@ -1,12 +1,19 @@
 const { Router } = require("express");
 const env = require("../config/env");
-const { runEmailCampaign, getEmailStatus, sendTestEmail } = require("../services/emailService");
+const { runEmailCampaign, dispatchSavedCampaign, getEmailStatus, sendTestEmail } = require("../services/emailService");
 const {
   listEmailSends,
   markLeadUnsubscribed,
   getAnalyticsByDay,
   getClickStats
 } = require("../repositories/emailRepository");
+const {
+  listCampaignsWithStats,
+  getCampaignById,
+  createCampaign,
+  updateCampaign,
+  getCampaignStats
+} = require("../repositories/campaignRepository");
 
 const router = Router();
 
@@ -20,6 +27,112 @@ function parseLimit(value, fallback = 50) {
   const parsed = Number(value);
   return Number.isInteger(parsed) && parsed > 0 ? Math.min(parsed, 100) : fallback;
 }
+
+function parseIdArray(value) {
+  if (!Array.isArray(value)) return [];
+  return value.map(Number).filter((id) => Number.isInteger(id) && id > 0);
+}
+
+function parseStringArray(value) {
+  if (!Array.isArray(value)) return [];
+  return value.map((v) => String(v).trim().toLowerCase()).filter(Boolean);
+}
+
+function validateCampaignPayload(body, { partial = false } = {}) {
+  const errors = [];
+  if (!partial || body.name !== undefined) {
+    if (!body.name || typeof body.name !== "string" || !body.name.trim()) errors.push("name is required");
+  }
+  if (!partial || body.subject !== undefined) {
+    if (!body.subject || typeof body.subject !== "string" || !body.subject.trim()) errors.push("subject is required");
+  }
+  if (!partial || body.template !== undefined) {
+    if (!body.template || typeof body.template !== "string" || !body.template.trim()) errors.push("template is required");
+  }
+  return errors;
+}
+
+router.get("/campaigns", async (req, res, next) => {
+  try {
+    const includeArchived = req.query.includeArchived === "true";
+    const data = await listCampaignsWithStats({ includeArchived });
+    res.json({ data });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get("/campaigns/:id", async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    const campaign = await getCampaignById(id);
+    if (!campaign) return res.status(404).json({ message: "Campanha não encontrada" });
+    const stats = await getCampaignStats(id);
+    res.json({ campaign, stats });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post("/campaigns", async (req, res, next) => {
+  try {
+    if (!checkToken(req, res)) return res.status(401).json({ message: "Unauthorized" });
+    const errors = validateCampaignPayload(req.body);
+    if (errors.length) return res.status(400).json({ message: errors.join(", ") });
+
+    const campaign = await createCampaign({
+      name: req.body.name,
+      subject: req.body.subject,
+      template: req.body.template,
+      sourceIds: parseIdArray(req.body.sourceIds),
+      fieldAreas: parseStringArray(req.body.fieldAreas),
+      dailyBatchSize: req.body.dailyBatchSize ? Number(req.body.dailyBatchSize) : null,
+      notes: req.body.notes || null
+    });
+    const stats = await getCampaignStats(campaign.id);
+    res.status(201).json({ campaign, stats });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.put("/campaigns/:id", async (req, res, next) => {
+  try {
+    if (!checkToken(req, res)) return res.status(401).json({ message: "Unauthorized" });
+    const id = Number(req.params.id);
+    const errors = validateCampaignPayload(req.body, { partial: true });
+    if (errors.length) return res.status(400).json({ message: errors.join(", ") });
+
+    const campaign = await updateCampaign(id, {
+      name: req.body.name,
+      subject: req.body.subject,
+      template: req.body.template,
+      sourceIds: req.body.sourceIds !== undefined ? parseIdArray(req.body.sourceIds) : undefined,
+      fieldAreas: req.body.fieldAreas !== undefined ? parseStringArray(req.body.fieldAreas) : undefined,
+      dailyBatchSize: req.body.dailyBatchSize !== undefined ? (req.body.dailyBatchSize ? Number(req.body.dailyBatchSize) : null) : undefined,
+      status: req.body.status,
+      notes: req.body.notes
+    });
+    if (!campaign) return res.status(404).json({ message: "Campanha não encontrada" });
+    const stats = await getCampaignStats(id);
+    res.json({ campaign, stats });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post("/campaigns/:id/dispatch", async (req, res, next) => {
+  try {
+    if (!checkToken(req, res)) return res.status(401).json({ message: "Unauthorized" });
+    const id = Number(req.params.id);
+    const dryRun = req.body.dryRun === true || req.body.dryRun === "true";
+    const totals = await dispatchSavedCampaign(id, { dryRun });
+    res.json({ success: true, totals });
+  } catch (err) {
+    if (err.statusCode) return res.status(err.statusCode).json({ message: err.message });
+    next(err);
+  }
+});
 
 router.post("/run", async (req, res, next) => {
   try {

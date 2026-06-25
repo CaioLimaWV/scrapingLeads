@@ -31,6 +31,22 @@
       .bar-row { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 4px; font-size: 0.8rem; }
       .bar-bg { flex: 1; height: 8px; border-radius: 99px; background: var(--border); overflow: hidden; }
       .bar-fill { height: 100%; border-radius: 99px; background: var(--accent); }
+      .campaign-grid { display: grid; gap: 0.75rem; }
+      .campaign-card { border: 1px solid var(--border); border-radius: 8px; padding: 0.9rem 1rem; background: var(--bg-2); }
+      .campaign-card-head { display: flex; justify-content: space-between; gap: 1rem; align-items: flex-start; flex-wrap: wrap; }
+      .campaign-card h4 { margin: 0 0 0.25rem; font-size: 1rem; }
+      .campaign-meta { font-size: 0.75rem; color: var(--muted); }
+      .campaign-stats { display: flex; gap: 1rem; flex-wrap: wrap; margin: 0.75rem 0; font-size: 0.8rem; }
+      .campaign-stats span { font-family: "IBM Plex Mono", monospace; }
+      .campaign-actions { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+      .segment-box { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+      @media(max-width:800px){ .segment-box { grid-template-columns: 1fr; } }
+      .checkbox-list { max-height: 140px; overflow: auto; border: 1px solid var(--border); border-radius: 6px; padding: 0.5rem; background: var(--bg-2); font-size: 0.8rem; }
+      .checkbox-list label { display: flex; gap: 0.4rem; align-items: center; margin-bottom: 0.25rem; cursor: pointer; }
+      .form-grid { display: grid; gap: 0.75rem; }
+      .badge { font-size: 0.65rem; padding: 2px 8px; border-radius: 99px; font-weight: 700; text-transform: uppercase; }
+      .badge-active { background: rgba(46,160,67,.2); color: var(--good); }
+      .badge-paused { background: rgba(240,180,41,.2); color: var(--ink); }
     </style>
   </head>
   <body>
@@ -44,6 +60,7 @@
       </div>
       <div class="nav-links">
         <a href="/panel/">Scraping</a>
+        <a href="/panel/engagement">Funil</a>
         <a href="/panel/whatsapp">WhatsApp</a>
         <a href="/panel/email" class="active">Email</a>
       </div>
@@ -70,6 +87,46 @@
           <p class="metric" id="metricTracking" style="font-size:1.1rem">-</p>
         </article>
       </section>
+      <p class="hint" id="emailTimingHint" style="margin: -0.25rem 0 1rem"></p>
+
+      <!-- Campanhas salvas -->
+      <section class="panel">
+        <div class="panel-head">
+          <div>
+            <h3>Campanhas Salvas</h3>
+            <p class="hint" style="margin-top:0.25rem">Crie uma vez, dispare todo dia com um clique. UTMs usam o slug da campanha no Google Analytics.</p>
+          </div>
+          <button id="newCampaignBtn" type="button">+ Nova campanha</button>
+        </div>
+
+        <div id="campaignFormWrap" class="form-grid" style="display:none;margin-top:1rem;border-top:1px solid var(--border);padding-top:1rem">
+          <input type="hidden" id="campaignEditId" value="" />
+          <label>Nome da campanha<input id="campaignName" type="text" placeholder="Ex: Clínicas SP — primeiro contato" /></label>
+          <label>Assunto do email<input id="campaignSubject" type="text" placeholder="Assunto que o lead verá na caixa de entrada" /></label>
+          <label>Lote diário<input id="campaignBatch" type="number" min="1" placeholder="Padrão: 50 emails por disparo" value="50" /></label>
+          <div class="segment-box">
+            <div>
+              <span style="font-size:0.85rem;font-weight:500">Fontes (segmento)</span>
+              <div id="campaignSources" class="checkbox-list"></div>
+            </div>
+            <div>
+              <span style="font-size:0.85rem;font-weight:500">Áreas / nichos</span>
+              <div id="campaignFieldAreas" class="checkbox-list"></div>
+            </div>
+          </div>
+          <label>Corpo do email<textarea id="campaignTemplate" class="template-area" placeholder="Olá {{nome}}, ..."></textarea></label>
+          <label>Notas (opcional)<input id="campaignNotes" type="text" placeholder="Ex: follow-up WhatsApp em 3 dias" /></label>
+          <div class="run-actions">
+            <button id="saveCampaignBtn" type="button">Salvar campanha</button>
+            <button id="cancelCampaignBtn" type="button" class="ghost">Cancelar</button>
+          </div>
+          <p id="campaignFormStatus" class="status"></p>
+        </div>
+
+        <div id="campaignList" class="campaign-grid" style="margin-top:1rem">
+          <span style="color:var(--muted);font-size:0.85rem">Carregando campanhas...</span>
+        </div>
+      </section>
 
       <!-- Painel de disparo -->
       <section class="panel run-panel">
@@ -79,8 +136,8 @@
         </div>
 
         <div id="trackingOffBanner" class="tracking-off" style="display:none">
-          ⚠️ <strong>Tracking desativado</strong> — aberturas e cliques não serão registrados.
-          Para ativar, defina <code>APP_BASE_URL</code> no <code>.env</code> com a URL pública do servidor.
+          ✓ <strong>Modo links diretos</strong> — portfólio, WhatsApp e Calendly abrem normalmente mesmo com o PC desligado.
+          Aberturas/cliques não entram no painel; use UTMs nos links do portfólio e veja cliques no Google Analytics do site.
         </div>
 
         <div class="run-controls">
@@ -99,18 +156,19 @@
           <!-- Helper de inserção de link -->
           <div>
             <span style="font-size:0.85rem;font-weight:500">Inserir link no corpo</span>
-            <span class="hint">Preencha o texto e a URL, clique em "Inserir" para adicionar ao template.</span>
+            <span class="hint">Links do portfólio recebem UTMs para o Google Analytics. WhatsApp/Calendly ficam sem UTM.</span>
             <div class="link-helper">
-              <input id="linkText" type="text" placeholder='Texto clicável (ex: "Fale comigo no WhatsApp")' />
-              <input id="linkUrl" type="url" placeholder="https://..." />
+              <input id="linkText" type="text" placeholder='Texto clicável (ex: "Ver portfólio")' />
+              <input id="linkUrl" type="url" placeholder="https://www.izaiasbessa.com.br/..." />
               <button id="insertLinkBtn" type="button" class="ghost">Inserir link</button>
             </div>
+            <span class="hint">Campanha UTM: usa o assunto acima (ou <code>cold-outreach</code> se vazio). Cada link vira <code>utm_content</code> distinto.</span>
           </div>
 
           <label>
             Corpo do Email (HTML permitido)
             <textarea id="emailTemplate" class="template-area" placeholder="Olá {{nome}}, ..."></textarea>
-            <span class="hint">Use {{nome}} para o nome do lead. Links inseridos acima serão rastreados automaticamente quando o tracking estiver ativo.</span>
+            <span class="hint">Use {{nome}} para o nome do lead. Links do portfólio ganham UTMs automaticamente no envio (também se colados no corpo).</span>
           </label>
 
           <label>
@@ -210,7 +268,9 @@
     <script>
       const state = {
         historyOffset: 0,
-        historyLimit: 20
+        historyLimit: 20,
+        sources: [],
+        fieldAreas: []
       };
 
       async function requestJson(url, options = {}) {
@@ -239,10 +299,39 @@
         return `<span style="color:${color};font-weight:600">${label}</span>`;
       }
 
+      function formatDelayRange(minMs, maxMs) {
+        function fmt(ms) {
+          if (ms >= 60000) return `${Math.round(ms / 60000)} min`;
+          return `${Math.round(ms / 1000)} s`;
+        }
+        return `${fmt(minMs)}–${fmt(maxMs)}`;
+      }
+
+      function dispatchWaitHint(dryRun, { batchSize, savedCampaign = false } = {}) {
+        const delay = state.emailConfig
+          ? formatDelayRange(state.emailConfig.delayMinMs, state.emailConfig.delayMaxMs)
+          : "8 s–20 s";
+        if (dryRun) return savedCampaign ? "Simulando campanha salva..." : "Simulando...";
+        if (savedCampaign) {
+          const batch = batchSize || state.emailConfig?.defaultBatch || 50;
+          return `Disparando campanha (até ${batch} emails + cópia monitor). Aguarde — há ${delay} entre cada envio. Não feche esta aba.`;
+        }
+        return `Enviando emails. Aguarde — há ${delay} entre cada envio. Não feche esta aba.`;
+      }
+
       // --- Status ---
       async function loadStatus() {
         try {
           const d = await requestJson("/api/email/status");
+          state.emailConfig = {
+            delayMinMs: d.delayMinMs,
+            delayMaxMs: d.delayMaxMs,
+            defaultBatch: d.defaultBatch
+          };
+          const timingEl = document.getElementById("emailTimingHint");
+          if (d.delayMinMs != null && d.delayMaxMs != null) {
+            timingEl.textContent = `Intervalo entre envios: ${formatDelayRange(d.delayMinMs, d.delayMaxMs)} · Lote padrão por disparo: ${d.defaultBatch ?? 50} emails (ajuste por campanha ou EMAIL_DEFAULT_BATCH no .env)`;
+          }
           document.getElementById("metricSentToday").textContent = d.sentToday;
           document.getElementById("metricDailyLimit").textContent = d.dailyLimit;
           document.getElementById("metricRemaining").textContent = d.remaining;
@@ -251,11 +340,23 @@
           if (d.trackingEnabled) {
             trackingEl.textContent = "Ativo";
             trackingEl.style.color = "var(--good)";
-            banner.style.display = "none";
           } else {
-            trackingEl.textContent = "Inativo";
-            trackingEl.style.color = "var(--muted)";
+            trackingEl.textContent = "Links diretos";
+            trackingEl.style.color = "var(--good)";
+          }
+
+          const lines = [];
+          if (!d.trackingEnabled) {
+            lines.push("✓ <strong>Modo links diretos</strong> — portfólio, WhatsApp e Calendly abrem normalmente mesmo com o PC desligado. Aberturas/cliques não entram no painel; use UTMs nos links do portfólio e veja cliques no Google Analytics do site.");
+          }
+          if (d.monitorTo) {
+            lines.push(`✓ <strong>Cópia monitor</strong> — a cada disparo real você recebe o mesmo email em <code>${d.monitorTo}</code> (assunto e corpo iguais aos leads, <code>{{nome}}</code> → nome do monitor).`);
+          }
+          if (lines.length) {
+            banner.innerHTML = lines.join(" ");
             banner.style.display = "block";
+          } else {
+            banner.style.display = "none";
           }
         } catch (e) { console.error(e); }
       }
@@ -264,6 +365,9 @@
       async function loadSources() {
         try {
           const { data } = await requestJson("/api/sources");
+          state.sources = data;
+          state.fieldAreas = [...new Set(data.map((s) => s.field_area).filter(Boolean))].sort();
+
           const sel = document.getElementById("sourceSelect");
           data.forEach((s) => {
             const o = document.createElement("option");
@@ -271,8 +375,190 @@
             o.textContent = s.name;
             sel.appendChild(o);
           });
+
+          renderCampaignSegmentOptions();
         } catch (e) { console.error(e); }
       }
+
+      function renderCampaignSegmentOptions() {
+        const srcBox = document.getElementById("campaignSources");
+        const areaBox = document.getElementById("campaignFieldAreas");
+        srcBox.innerHTML = state.sources.map((s) =>
+          `<label><input type="checkbox" value="${s.id}" data-campaign-source /> ${s.name}</label>`
+        ).join("") || '<span style="color:var(--muted)">Nenhuma fonte</span>';
+        areaBox.innerHTML = state.fieldAreas.map((a) =>
+          `<label><input type="checkbox" value="${a}" data-campaign-area /> ${a}</label>`
+        ).join("") || '<span style="color:var(--muted)">Nenhuma área</span>';
+      }
+
+      function getCheckedValues(selector) {
+        return [...document.querySelectorAll(selector)].filter((el) => el.checked).map((el) => el.value);
+      }
+
+      function setCheckedValues(selector, values) {
+        const set = new Set((values || []).map(String));
+        document.querySelectorAll(selector).forEach((el) => { el.checked = set.has(String(el.value)); });
+      }
+
+      function showCampaignForm(campaign = null) {
+        document.getElementById("campaignFormWrap").style.display = "grid";
+        document.getElementById("campaignEditId").value = campaign ? campaign.id : "";
+        document.getElementById("campaignName").value = campaign?.name || "";
+        document.getElementById("campaignSubject").value = campaign?.subject || "";
+        document.getElementById("campaignTemplate").value = campaign?.template || "";
+        document.getElementById("campaignBatch").value = campaign?.daily_batch_size || "";
+        document.getElementById("campaignNotes").value = campaign?.notes || "";
+        setCheckedValues("[data-campaign-source]", campaign?.source_ids || []);
+        setCheckedValues("[data-campaign-area]", campaign?.field_areas || []);
+        document.getElementById("campaignFormStatus").textContent = "";
+      }
+
+      function hideCampaignForm() {
+        document.getElementById("campaignFormWrap").style.display = "none";
+        document.getElementById("campaignEditId").value = "";
+      }
+
+      function describeSegment(campaign) {
+        const parts = [];
+        if (campaign.source_ids?.length) parts.push(`${campaign.source_ids.length} fonte(s)`);
+        if (campaign.field_areas?.length) parts.push(campaign.field_areas.join(", "));
+        return parts.length ? parts.join(" · ") : "Todos os leads elegíveis";
+      }
+
+      function statusCampaignBadge(status) {
+        if (status === "paused") return '<span class="badge badge-paused">Pausada</span>';
+        return '<span class="badge badge-active">Ativa</span>';
+      }
+
+      async function loadCampaigns() {
+        const list = document.getElementById("campaignList");
+        try {
+          const { data } = await requestJson("/api/email/campaigns");
+          state.campaigns = data;
+          if (!data.length) {
+            list.innerHTML = '<span style="color:var(--muted);font-size:0.85rem">Nenhuma campanha salva. Clique em "+ Nova campanha".</span>';
+            return;
+          }
+          list.innerHTML = data.map((c) => {
+            const s = c.stats || {};
+            return `
+              <article class="campaign-card" data-id="${c.id}">
+                <div class="campaign-card-head">
+                  <div>
+                    <h4>${c.name} ${statusCampaignBadge(c.status)}</h4>
+                    <p class="campaign-meta">${describeSegment(c)} · UTM: <code>${c.slug}</code></p>
+                  </div>
+                  <div class="campaign-actions">
+                    <button type="button" class="ghost" data-dispatch="${c.id}">Disparar</button>
+                    <button type="button" class="ghost" data-dryrun="${c.id}">Dry Run</button>
+                    <button type="button" class="ghost" data-edit="${c.id}">Editar</button>
+                    <button type="button" class="ghost" data-toggle="${c.id}" data-status="${c.status}">${c.status === "paused" ? "Ativar" : "Pausar"}</button>
+                  </div>
+                </div>
+                <div class="campaign-stats">
+                  <span><strong>${s.sent || 0}</strong> enviados</span>
+                  <span><strong>${s.eligible || 0}</strong> elegíveis</span>
+                  <span><strong>${s.clicks || 0}</strong> cliques</span>
+                  <span><strong>${s.clickRate || 0}%</strong> taxa clique</span>
+                  <span>Último: ${s.lastSentAt ? fmt(s.lastSentAt) : "—"}</span>
+                </div>
+                <p class="campaign-meta" style="margin:0">Assunto: ${c.subject}</p>
+              </article>`;
+          }).join("");
+
+          list.querySelectorAll("[data-dispatch]").forEach((btn) =>
+            btn.addEventListener("click", () => dispatchSavedCampaign(btn.dataset.dispatch, false)));
+          list.querySelectorAll("[data-dryrun]").forEach((btn) =>
+            btn.addEventListener("click", () => dispatchSavedCampaign(btn.dataset.dryrun, true)));
+          list.querySelectorAll("[data-edit]").forEach((btn) =>
+            btn.addEventListener("click", () => editCampaign(btn.dataset.edit)));
+          list.querySelectorAll("[data-toggle]").forEach((btn) =>
+            btn.addEventListener("click", () => toggleCampaignStatus(btn.dataset.toggle, btn.dataset.status)));
+        } catch (e) {
+          list.innerHTML = `<span style="color:var(--bad)">Erro ao carregar campanhas: ${e.message}</span>`;
+        }
+      }
+
+      async function editCampaign(id) {
+        const { campaign } = await requestJson(`/api/email/campaigns/${id}`);
+        showCampaignForm(campaign);
+        document.getElementById("campaignFormWrap").scrollIntoView({ behavior: "smooth" });
+      }
+
+      async function toggleCampaignStatus(id, currentStatus) {
+        const next = currentStatus === "paused" ? "active" : "paused";
+        const token = document.getElementById("runToken").value.trim();
+        await requestJson(`/api/email/campaigns/${id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json", ...(token ? { "x-panel-token": token } : {}) },
+          body: JSON.stringify({ status: next })
+        });
+        await loadCampaigns();
+      }
+
+      async function saveCampaign() {
+        const id = document.getElementById("campaignEditId").value;
+        const token = document.getElementById("runToken").value.trim();
+        const payload = {
+          name: document.getElementById("campaignName").value.trim(),
+          subject: document.getElementById("campaignSubject").value.trim(),
+          template: document.getElementById("campaignTemplate").value.trim(),
+          sourceIds: getCheckedValues("[data-campaign-source]").map(Number),
+          fieldAreas: getCheckedValues("[data-campaign-area]"),
+          dailyBatchSize: document.getElementById("campaignBatch").value.trim() || null,
+          notes: document.getElementById("campaignNotes").value.trim() || null
+        };
+        const statusEl = document.getElementById("campaignFormStatus");
+        if (!payload.name || !payload.subject || !payload.template) {
+          statusEl.textContent = "Preencha nome, assunto e corpo.";
+          statusEl.style.color = "var(--bad)";
+          return;
+        }
+        statusEl.textContent = "Salvando...";
+        statusEl.style.color = "var(--muted)";
+        try {
+          await requestJson(id ? `/api/email/campaigns/${id}` : "/api/email/campaigns", {
+            method: id ? "PUT" : "POST",
+            headers: { "Content-Type": "application/json", ...(token ? { "x-panel-token": token } : {}) },
+            body: JSON.stringify(payload)
+          });
+          statusEl.textContent = id ? "Campanha atualizada." : "Campanha criada.";
+          statusEl.style.color = "var(--good)";
+          hideCampaignForm();
+          await loadCampaigns();
+        } catch (e) {
+          statusEl.textContent = `Erro: ${e.message}`;
+          statusEl.style.color = "var(--bad)";
+        }
+      }
+
+      async function dispatchSavedCampaign(id, dryRun) {
+        const token = document.getElementById("runToken").value.trim();
+        const campaign = state.campaigns?.find((c) => String(c.id) === String(id));
+        const batchSize = campaign?.daily_batch_size || state.emailConfig?.defaultBatch;
+        setStatus(dispatchWaitHint(dryRun, { batchSize, savedCampaign: true }), true);
+        document.querySelectorAll("[data-dispatch],[data-dryrun]").forEach((btn) => { btn.disabled = true; });
+        try {
+          const { totals } = await requestJson(`/api/email/campaigns/${id}/dispatch`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", ...(token ? { "x-panel-token": token } : {}) },
+            body: JSON.stringify({ dryRun })
+          });
+          const prefix = dryRun ? "[DRY RUN] " : "";
+          const monitorNote = totals.monitorSent ? " | Cópia monitor enviada" : "";
+          setStatus(`${prefix}Enviados: ${totals.sent} | Falhos: ${totals.failed} | Pulados: ${totals.skipped} | Restantes hoje: ${totals.remaining}${monitorNote}`, true);
+          await Promise.all([loadStatus(), loadHistory(), loadCampaigns()]);
+          loadAnalytics().catch((e) => console.error("Analytics:", e));
+        } catch (e) {
+          setStatus(`Erro: ${e.message}`, false);
+        } finally {
+          document.querySelectorAll("[data-dispatch],[data-dryrun]").forEach((btn) => { btn.disabled = false; });
+        }
+      }
+
+      document.getElementById("newCampaignBtn").addEventListener("click", () => showCampaignForm());
+      document.getElementById("cancelCampaignBtn").addEventListener("click", hideCampaignForm);
+      document.getElementById("saveCampaignBtn").addEventListener("click", saveCampaign);
 
       // --- Analytics ---
       async function loadAnalytics() {
@@ -349,10 +635,51 @@
       }
 
       // --- Helper de inserção de link ---
+      const UTM_PORTFOLIO_HOST = "izaiasbessa.com.br";
+      const UTM_SKIP_HOSTS = new Set(["wa.me", "api.whatsapp.com", "calendly.com", "www.calendly.com"]);
+
+      function slugifyUtm(value, fallback = "link") {
+        const slug = String(value || "")
+          .normalize("NFD")
+          .replace(/[\u0300-\u036f]/g, "")
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, "-")
+          .replace(/^-+|-+$/g, "")
+          .slice(0, 80);
+        return slug || fallback;
+      }
+
+      function shouldAppendUtm(rawUrl) {
+        try {
+          const url = new URL(rawUrl);
+          if (!["http:", "https:"].includes(url.protocol)) return false;
+          const host = url.hostname.replace(/^www\./i, "").toLowerCase();
+          if (UTM_SKIP_HOSTS.has(host)) return false;
+          return host === UTM_PORTFOLIO_HOST || host.endsWith(`.${UTM_PORTFOLIO_HOST}`);
+        } catch {
+          return false;
+        }
+      }
+
+      function appendUtmParams(rawUrl, { campaign, content }) {
+        if (!shouldAppendUtm(rawUrl)) return rawUrl;
+        const url = new URL(rawUrl);
+        if (!url.searchParams.has("utm_source")) url.searchParams.set("utm_source", "scraping_leads");
+        if (!url.searchParams.has("utm_medium")) url.searchParams.set("utm_medium", "email");
+        if (!url.searchParams.has("utm_campaign")) url.searchParams.set("utm_campaign", campaign);
+        if (!url.searchParams.has("utm_content")) url.searchParams.set("utm_content", content);
+        return url.toString();
+      }
+
       document.getElementById("insertLinkBtn").addEventListener("click", () => {
         const text = document.getElementById("linkText").value.trim();
-        const url = document.getElementById("linkUrl").value.trim();
-        if (!text || !url) { alert("Preencha o texto e a URL do link."); return; }
+        const rawUrl = document.getElementById("linkUrl").value.trim();
+        if (!text || !rawUrl) { alert("Preencha o texto e a URL do link."); return; }
+
+        const subject = document.getElementById("emailSubject").value.trim();
+        const campaign = slugifyUtm(subject, "cold-outreach");
+        const content = slugifyUtm(text, "link");
+        const url = appendUtmParams(rawUrl, { campaign, content });
         const tag = `<a href="${url}">${text}</a>`;
         const ta = document.getElementById("emailTemplate");
         const start = ta.selectionStart;
@@ -374,7 +701,7 @@
         if (!subject) { setStatus("Informe o assunto.", false); return; }
         if (!template) { setStatus("Informe o corpo do email.", false); return; }
 
-        setStatus(dryRun ? "Simulando..." : "Enviando...", true);
+        setStatus(dispatchWaitHint(dryRun), true);
         document.getElementById("runButton").disabled = true;
         document.getElementById("dryRunButton").disabled = true;
 
@@ -388,7 +715,8 @@
             body: JSON.stringify({ sourceId, subject, template, dryRun })
           });
           const prefix = dryRun ? "[DRY RUN] " : "";
-          setStatus(`${prefix}Enviados: ${totals.sent} | Falhos: ${totals.failed} | Pulados: ${totals.skipped} | Restantes hoje: ${totals.remaining}`, true);
+          const monitorNote = totals.monitorSent ? " | Cópia monitor enviada" : "";
+          setStatus(`${prefix}Enviados: ${totals.sent} | Falhos: ${totals.failed} | Pulados: ${totals.skipped} | Restantes hoje: ${totals.remaining}${monitorNote}`, true);
           await Promise.all([loadStatus(), loadHistory(), loadAnalytics()]);
         } catch (e) {
           setStatus(`Erro: ${e.message}`, false);
@@ -441,7 +769,7 @@
       document.getElementById("analyticsDays").addEventListener("change", loadAnalytics);
 
       (async () => {
-        await Promise.all([loadStatus(), loadSources(), loadHistory(), loadAnalytics()]);
+        await Promise.all([loadStatus(), loadSources(), loadCampaigns(), loadHistory(), loadAnalytics()]);
         setInterval(loadStatus, 30000);
       })();
     </script>

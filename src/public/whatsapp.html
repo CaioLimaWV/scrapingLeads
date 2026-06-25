@@ -14,7 +14,8 @@
 
 <div class="container">
     <h2 class="mb-4 text-center">Fila de Atendimento WhatsApp</h2>
-    <p class="text-center text-muted">Mostrando até 100 leads não contatados que possuem telefone.</p>
+    <p class="text-center text-muted">Até 100 leads com telefone, ordenados por <strong>score</strong> (quente primeiro).</p>
+    <p class="text-center mb-3"><a href="/panel/engagement">Ver funil completo</a> · <a href="/panel/">Painel</a></p>
     
     <div id="loading" class="text-center my-5">
         <div class="spinner-border text-success" role="status">
@@ -62,14 +63,21 @@
                 phoneDigits = '55' + phoneDigits; // Assumindo Brasil se nao tiver DDI
             }
 
+            const tempLabels = { cold: "Frio", warm: "Morno", hot: "Quente", lost: "Fora" };
+            const temp = tempLabels[lead.temperature] || lead.temperature || "Frio";
+            const score = lead.engagement_score ?? 0;
+            const action = lead.next_action || "";
+
             col.innerHTML = `
-                <div class="card lead-card">
+                <div class="card lead-card ${lead.temperature === 'hot' ? 'border-danger' : ''}">
                     <div class="card-body">
-                        <h5 class="card-title text-truncate" title="${lead.name || 'Sem nome'}">${lead.name || 'Sem nome'}</h5>
-                        <p class="card-text text-muted">${lead.phone}</p>
-                        <button class="btn btn-success w-100">
-                            <i class="bi bi-whatsapp"></i> Chamar no WhatsApp
-                        </button>
+                        <div class="d-flex justify-content-between align-items-start mb-1">
+                            <h5 class="card-title text-truncate mb-0" title="${lead.name || 'Sem nome'}">${lead.name || 'Sem nome'}</h5>
+                            <span class="badge ${lead.temperature === 'hot' ? 'bg-danger' : lead.temperature === 'warm' ? 'bg-warning text-dark' : 'bg-secondary'}">${temp} · ${score}pts</span>
+                        </div>
+                        <p class="card-text text-muted mb-1">${lead.phone}</p>
+                        ${action ? `<p class="small text-muted mb-2">${action}</p>` : ''}
+                        <button class="btn btn-success w-100">Chamar no WhatsApp</button>
                     </div>
                 </div>
             `;

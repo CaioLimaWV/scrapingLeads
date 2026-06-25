@@ -1,5 +1,6 @@
 const { Router } = require("express");
 const { findSendByToken, recordEvent, markLeadUnsubscribed } = require("../repositories/emailRepository");
+const { recalculateLeadEngagement } = require("../services/leadScoringService");
 const logger = require("../config/logger");
 
 const router = Router();
@@ -25,6 +26,9 @@ router.get("/open/:token", async (req, res) => {
     const send = await findSendByToken(token);
     if (send) {
       await recordEvent(send.id, { eventType: "open", ip: clientIp(req) });
+      recalculateLeadEngagement(send.lead_id).catch((err) =>
+        logger.error({ err, leadId: send.lead_id }, "Failed to recalculate engagement after open")
+      );
     }
   } catch (err) {
     logger.error({ err, token }, "Error recording open event");
@@ -43,6 +47,9 @@ router.get("/click/:token", async (req, res) => {
     const send = await findSendByToken(token);
     if (send) {
       await recordEvent(send.id, { eventType: "click", urlClicked: url, ip: clientIp(req) });
+      recalculateLeadEngagement(send.lead_id).catch((err) =>
+        logger.error({ err, leadId: send.lead_id }, "Failed to recalculate engagement after click")
+      );
     }
   } catch (err) {
     logger.error({ err, token }, "Error recording click event");
@@ -62,6 +69,9 @@ router.get("/unsub/:token", async (req, res) => {
     if (send) {
       await recordEvent(send.id, { eventType: "unsubscribe", ip: clientIp(req) });
       await markLeadUnsubscribed(send.lead_id);
+      recalculateLeadEngagement(send.lead_id).catch((err) =>
+        logger.error({ err, leadId: send.lead_id }, "Failed to recalculate engagement after unsubscribe")
+      );
       logger.info({ token, leadId: send.lead_id }, "Lead unsubscribed via email link");
     }
   } catch (err) {
