@@ -2,7 +2,8 @@ const {
   slugifyUtm,
   shouldAppendUtm,
   appendUtmParams,
-  injectPortfolioUtms
+  injectPortfolioUtms,
+  extractUtmLinks
 } = require("../../src/utils/emailUtm");
 
 describe("emailUtm", () => {
@@ -54,5 +55,18 @@ describe("emailUtm", () => {
     );
     expect(out).toContain("utm_campaign=clinicas-sp-primeiro-contato");
     expect(out).not.toContain("assunto-qualquer");
+  });
+
+  it("extracts utm links from html after injection", () => {
+    const html = injectPortfolioUtms(
+      '<a href="https://www.izaiasbessa.com.br/cases/jessica-lopes/">Ver case</a>',
+      "Assunto",
+      "b2b-test"
+    );
+    const links = extractUtmLinks(html);
+    expect(links).toHaveLength(1);
+    expect(links[0].campaign).toBe("b2b-test");
+    expect(links[0].content).toBe("ver-case");
+    expect(links[0].url).toContain("utm_source=scraping_leads");
   });
 });

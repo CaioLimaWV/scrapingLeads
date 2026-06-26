@@ -26,6 +26,11 @@
       .link-helper button { white-space: nowrap; }
       .analytics-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
       @media(max-width:700px){ .analytics-grid { grid-template-columns: 1fr; } }
+      .utm-badge { font-family:'IBM Plex Mono',monospace;font-size:0.7rem;background:rgba(255,255,255,0.06);padding:2px 6px;border-radius:4px;word-break:break-all;display:inline-block;max-width:140px;overflow:hidden;text-overflow:ellipsis;vertical-align:middle; }
+      .utm-links-mini { font-size:0.65rem;color:var(--muted);margin-top:2px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+      .ga-guide { margin-top:1rem;padding:0.85rem 1rem;border:1px solid rgba(255,255,255,0.08);border-radius:8px;background:rgba(0,0,0,0.15);font-size:0.82rem;line-height:1.5;color:var(--muted); }
+      .ga-guide strong { color:var(--text); }
+      .ga-guide code { font-size:0.75rem; }
       .stat-num { font-size: 1.4rem; font-weight: 700; font-family: "IBM Plex Mono", monospace; }
       .stat-label { font-size: 0.75rem; color: var(--muted); }
       .bar-row { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 4px; font-size: 0.8rem; }
@@ -47,6 +52,16 @@
       .badge { font-size: 0.65rem; padding: 2px 8px; border-radius: 99px; font-weight: 700; text-transform: uppercase; }
       .badge-active { background: rgba(46,160,67,.2); color: var(--good); }
       .badge-paused { background: rgba(240,180,41,.2); color: var(--ink); }
+      .step-timeline { display: grid; gap: 0.75rem; margin-top: 0.5rem; }
+      .step-card { border: 1px solid var(--border); border-radius: 8px; padding: 0.85rem; background: var(--bg-2); }
+      .step-card-head { display: flex; justify-content: space-between; gap: 0.75rem; align-items: center; margin-bottom: 0.5rem; }
+      .step-card-head h5 { margin: 0; font-size: 0.9rem; }
+      .step-card.locked { opacity: 0.85; border-color: rgba(46,160,67,.35); }
+      .step-badge { font-size: 0.65rem; padding: 2px 8px; border-radius: 99px; font-weight: 700; }
+      .step-badge-sent { background: rgba(46,160,67,.2); color: var(--good); }
+      .step-badge-draft { background: rgba(240,180,41,.2); color: var(--ink); }
+      .step-mini { font-size: 0.75rem; color: var(--muted); margin-top: 0.35rem; }
+      .step-actions { display: flex; gap: 0.35rem; flex-wrap: wrap; }
     </style>
   </head>
   <body>
@@ -102,7 +117,6 @@
         <div id="campaignFormWrap" class="form-grid" style="display:none;margin-top:1rem;border-top:1px solid var(--border);padding-top:1rem">
           <input type="hidden" id="campaignEditId" value="" />
           <label>Nome da campanha<input id="campaignName" type="text" placeholder="Ex: Clínicas SP — primeiro contato" /></label>
-          <label>Assunto do email<input id="campaignSubject" type="text" placeholder="Assunto que o lead verá na caixa de entrada" /></label>
           <label>Lote diário<input id="campaignBatch" type="number" min="1" placeholder="Padrão: 50 emails por disparo" value="50" /></label>
           <div class="segment-box">
             <div>
@@ -114,7 +128,16 @@
               <div id="campaignFieldAreas" class="checkbox-list"></div>
             </div>
           </div>
-          <label>Corpo do email<textarea id="campaignTemplate" class="template-area" placeholder="Olá {{nome}}, ..."></textarea></label>
+          <div>
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:1rem;flex-wrap:wrap">
+              <div>
+                <span style="font-size:0.85rem;font-weight:500">Sequência de emails</span>
+                <p class="hint" style="margin:0.25rem 0 0">Cada contato avança na própria linha do tempo. Quem entra novo na lista começa pelo email 1, mesmo se a campanha já estiver no 10º.</p>
+              </div>
+              <button id="addCampaignStepBtn" type="button" class="ghost">+ Email na sequência</button>
+            </div>
+            <div id="campaignSteps" class="step-timeline"></div>
+          </div>
           <label>Notas (opcional)<input id="campaignNotes" type="text" placeholder="Ex: follow-up WhatsApp em 3 dias" /></label>
           <div class="run-actions">
             <button id="saveCampaignBtn" type="button">Salvar campanha</button>
@@ -225,10 +248,28 @@
           </div>
           <!-- Top links clicados -->
           <div>
-            <p style="font-weight:600;margin-bottom:0.75rem">Links mais clicados</p>
+            <p style="font-weight:600;margin-bottom:0.75rem">Links mais clicados (painel)</p>
             <div id="chartTopLinks"><span style="color:var(--muted);font-size:0.85rem">Sem dados</span></div>
+            <p class="hint" style="margin-top:0.5rem">Só preenche com <code>APP_BASE_URL</code> ativo. Cliques no portfólio via UTM → Google Analytics abaixo.</p>
           </div>
         </div>
+
+        <div style="margin-top:1.25rem">
+          <p style="font-weight:600;margin-bottom:0.75rem">UTM — envios por campanha (scrapingLeads)</p>
+          <div id="chartUtmCampaigns"><span style="color:var(--muted);font-size:0.85rem">Sem dados</span></div>
+        </div>
+
+        <details class="ga-guide" style="margin-top:1rem">
+          <summary style="cursor:pointer;font-weight:600;color:var(--text)">Como ver cliques no Google Analytics</summary>
+          <ol style="margin:0.75rem 0 0 1rem;padding:0">
+            <li>Acesse <a href="https://analytics.google.com" target="_blank" rel="noopener">analytics.google.com</a> → propriedade <strong>izaiasbessa.com.br</strong>.</li>
+            <li><strong>Relatórios</strong> → <strong>Aquisição</strong> → <strong>Aquisição de tráfego</strong>.</li>
+            <li>Dimensão secundária: <strong>Campanha da sessão</strong> (ou <strong>Origem / Mídia</strong>).</li>
+            <li>Filtre: Origem = <code>scraping_leads</code>, Mídia = <code>email</code>.</li>
+            <li>Compare campanhas como <code>b2b-contabilidade-advocacia-imobiliarias</code> com a coluna UTM acima.</li>
+          </ol>
+          <p style="margin:0.75rem 0 0">Atalho direto (Explorar): evento <code>page_view</code> → dimensões <code>sessionSource</code>, <code>sessionMedium</code>, <code>sessionCampaignName</code>, <code>sessionManualTerm</code> (utm_content).</p>
+        </details>
       </section>
 
       <!-- Histórico de envios -->
@@ -253,6 +294,7 @@
                 <th>Status</th>
                 <th>Aberturas</th>
                 <th>Cliques</th>
+                <th>UTM</th>
                 <th>Enviado em</th>
                 <th>Erro</th>
                 <th>Ação</th>
@@ -400,17 +442,90 @@
         document.querySelectorAll(selector).forEach((el) => { el.checked = set.has(String(el.value)); });
       }
 
-      function showCampaignForm(campaign = null) {
+      function renderStepTimelineHtml(steps) {
+        if (!steps?.length) return "";
+        return `<div class="step-timeline" style="margin-top:0.5rem">${steps.map((step) => {
+          const sent = step.sent || 0;
+          const badge = sent > 0
+            ? `<span class="step-badge step-badge-sent">${sent} enviados</span>`
+            : `<span class="step-badge step-badge-draft">não disparado</span>`;
+          const wait = step.step_order > 1
+            ? ` · aguardar ${step.min_days_since_previous || 3} dias após anterior`
+            : "";
+          return `<div class="step-card ${step.locked ? "locked" : ""}">
+            <div class="step-card-head">
+              <h5>Email ${step.step_order}</h5>
+              ${badge}
+            </div>
+            <p class="step-mini"><strong>Assunto:</strong> ${step.subject}${wait}</p>
+            ${step.lastSentAt ? `<p class="step-mini">Último disparo: ${fmt(step.lastSentAt)}</p>` : ""}
+          </div>`;
+        }).join("")}</div>`;
+      }
+
+      function defaultStep() {
+        return { subject: "", template: "Olá {{nome}},\n\n", minDaysSincePrevious: 3, locked: false };
+      }
+
+      function renderCampaignStepsEditor(steps) {
+        const box = document.getElementById("campaignSteps");
+        const list = steps?.length ? steps : [defaultStep()];
+        box.innerHTML = list.map((step, index) => {
+          const locked = !!step.locked;
+          return `<article class="step-card ${locked ? "locked" : ""}" data-step-index="${index}">
+            <div class="step-card-head">
+              <h5>Email ${index + 1}${locked ? " · já disparado" : ""}</h5>
+              ${index > 0 && !locked ? `<button type="button" class="ghost" data-remove-step="${index}">Remover</button>` : ""}
+            </div>
+            ${index > 0 ? `<label>Aguardar após email anterior (dias)
+              <input type="number" min="1" data-step-days="${index}" value="${step.min_days_since_previous ?? step.minDaysSincePrevious ?? 3}" ${locked ? "disabled" : ""} />
+            </label>` : ""}
+            <label>Assunto<input type="text" data-step-subject="${index}" value="${(step.subject || "").replace(/"/g, "&quot;")}" ${locked ? "readonly" : ""} /></label>
+            <label>Corpo<textarea class="template-area" data-step-template="${index}" ${locked ? "readonly" : ""}>${step.template || ""}</textarea></label>
+          </article>`;
+        }).join("");
+
+        box.querySelectorAll("[data-remove-step]").forEach((btn) =>
+          btn.addEventListener("click", () => {
+            const idx = Number(btn.dataset.removeStep);
+            const current = collectCampaignStepsFromEditor();
+            current.splice(idx, 1);
+            renderCampaignStepsEditor(current);
+          }));
+      }
+
+      function collectCampaignStepsFromEditor() {
+        const cards = [...document.querySelectorAll("#campaignSteps [data-step-index]")];
+        return cards.map((card, index) => {
+          const locked = card.classList.contains("locked");
+          const subjectEl = card.querySelector(`[data-step-subject="${index}"]`);
+          const templateEl = card.querySelector(`[data-step-template="${index}"]`);
+          const daysEl = card.querySelector(`[data-step-days="${index}"]`);
+          return {
+            subject: subjectEl?.value.trim() || "",
+            template: templateEl?.value.trim() || "",
+            minDaysSincePrevious: index === 0 ? null : Number(daysEl?.value || 3),
+            locked
+          };
+        });
+      }
+
+      function showCampaignForm(campaign = null, steps = null) {
         document.getElementById("campaignFormWrap").style.display = "grid";
         document.getElementById("campaignEditId").value = campaign ? campaign.id : "";
         document.getElementById("campaignName").value = campaign?.name || "";
-        document.getElementById("campaignSubject").value = campaign?.subject || "";
-        document.getElementById("campaignTemplate").value = campaign?.template || "";
         document.getElementById("campaignBatch").value = campaign?.daily_batch_size || "";
         document.getElementById("campaignNotes").value = campaign?.notes || "";
         setCheckedValues("[data-campaign-source]", campaign?.source_ids || []);
         setCheckedValues("[data-campaign-area]", campaign?.field_areas || []);
         document.getElementById("campaignFormStatus").textContent = "";
+
+        const initialSteps = steps?.length
+          ? steps
+          : campaign
+            ? [{ subject: campaign.subject, template: campaign.template, minDaysSincePrevious: null }]
+            : [defaultStep()];
+        renderCampaignStepsEditor(initialSteps);
       }
 
       function hideCampaignForm() {
@@ -422,6 +537,10 @@
         const parts = [];
         if (campaign.source_ids?.length) parts.push(`${campaign.source_ids.length} fonte(s)`);
         if (campaign.field_areas?.length) parts.push(campaign.field_areas.join(", "));
+        if (campaign.require_prior_email) {
+          const days = campaign.min_days_since_email || 0;
+          parts.push(days ? `follow-up · ${days}+ dias` : "follow-up");
+        }
         return parts.length ? parts.join(" · ") : "Todos os leads elegíveis";
       }
 
@@ -441,12 +560,13 @@
           }
           list.innerHTML = data.map((c) => {
             const s = c.stats || {};
+            const steps = s.steps || [];
             return `
               <article class="campaign-card" data-id="${c.id}">
                 <div class="campaign-card-head">
                   <div>
                     <h4>${c.name} ${statusCampaignBadge(c.status)}</h4>
-                    <p class="campaign-meta">${describeSegment(c)} · UTM: <code>${c.slug}</code></p>
+                    <p class="campaign-meta">${describeSegment(c)} · ${steps.length || 1} email(s) na sequência · UTM: <code>${c.slug}</code></p>
                   </div>
                   <div class="campaign-actions">
                     <button type="button" class="ghost" data-dispatch="${c.id}">Disparar</button>
@@ -457,12 +577,12 @@
                 </div>
                 <div class="campaign-stats">
                   <span><strong>${s.sent || 0}</strong> enviados</span>
-                  <span><strong>${s.eligible || 0}</strong> elegíveis</span>
+                  <span><strong>${s.eligible || 0}</strong> elegíveis agora</span>
                   <span><strong>${s.clicks || 0}</strong> cliques</span>
                   <span><strong>${s.clickRate || 0}%</strong> taxa clique</span>
                   <span>Último: ${s.lastSentAt ? fmt(s.lastSentAt) : "—"}</span>
                 </div>
-                <p class="campaign-meta" style="margin:0">Assunto: ${c.subject}</p>
+                ${renderStepTimelineHtml(steps)}
               </article>`;
           }).join("");
 
@@ -480,8 +600,8 @@
       }
 
       async function editCampaign(id) {
-        const { campaign } = await requestJson(`/api/email/campaigns/${id}`);
-        showCampaignForm(campaign);
+        const { campaign, steps } = await requestJson(`/api/email/campaigns/${id}`);
+        showCampaignForm(campaign, steps);
         document.getElementById("campaignFormWrap").scrollIntoView({ behavior: "smooth" });
       }
 
@@ -499,18 +619,20 @@
       async function saveCampaign() {
         const id = document.getElementById("campaignEditId").value;
         const token = document.getElementById("runToken").value.trim();
+        const steps = collectCampaignStepsFromEditor();
         const payload = {
           name: document.getElementById("campaignName").value.trim(),
-          subject: document.getElementById("campaignSubject").value.trim(),
-          template: document.getElementById("campaignTemplate").value.trim(),
+          subject: steps[0]?.subject || "",
+          template: steps[0]?.template || "",
+          steps,
           sourceIds: getCheckedValues("[data-campaign-source]").map(Number),
           fieldAreas: getCheckedValues("[data-campaign-area]"),
           dailyBatchSize: document.getElementById("campaignBatch").value.trim() || null,
           notes: document.getElementById("campaignNotes").value.trim() || null
         };
         const statusEl = document.getElementById("campaignFormStatus");
-        if (!payload.name || !payload.subject || !payload.template) {
-          statusEl.textContent = "Preencha nome, assunto e corpo.";
+        if (!payload.name || !payload.steps.length || payload.steps.some((s) => !s.subject || !s.template)) {
+          statusEl.textContent = "Preencha nome e todos os emails da sequência (assunto + corpo).";
           statusEl.style.color = "var(--bad)";
           return;
         }
@@ -546,7 +668,10 @@
           });
           const prefix = dryRun ? "[DRY RUN] " : "";
           const monitorNote = totals.monitorSent ? " | Cópia monitor enviada" : "";
-          setStatus(`${prefix}Enviados: ${totals.sent} | Falhos: ${totals.failed} | Pulados: ${totals.skipped} | Restantes hoje: ${totals.remaining}${monitorNote}`, true);
+          const byStep = totals.byStep
+            ? ` | Por email: ${Object.entries(totals.byStep).map(([k, v]) => `#${k}=${v}`).join(", ")}`
+            : "";
+          setStatus(`${prefix}Enviados: ${totals.sent} | Falhos: ${totals.failed} | Pulados: ${totals.skipped} | Elegíveis restantes: ${totals.remaining}${byStep}${monitorNote}`, true);
           await Promise.all([loadStatus(), loadHistory(), loadCampaigns()]);
           loadAnalytics().catch((e) => console.error("Analytics:", e));
         } catch (e) {
@@ -557,14 +682,41 @@
       }
 
       document.getElementById("newCampaignBtn").addEventListener("click", () => showCampaignForm());
+      document.getElementById("addCampaignStepBtn").addEventListener("click", () => {
+        const steps = collectCampaignStepsFromEditor();
+        steps.push(defaultStep());
+        renderCampaignStepsEditor(steps);
+      });
       document.getElementById("cancelCampaignBtn").addEventListener("click", hideCampaignForm);
       document.getElementById("saveCampaignBtn").addEventListener("click", saveCampaign);
+
+      function escAttr(value) {
+        return String(value || "")
+          .replace(/&/g, "&amp;")
+          .replace(/"/g, "&quot;")
+          .replace(/</g, "&lt;");
+      }
+
+      function renderUtmCell(r) {
+        const campaign = r.utm_campaign || r.campaign_slug;
+        if (!campaign && !(r.utm_links || []).length) {
+          return '<span style="color:var(--muted)">—</span>';
+        }
+        const links = r.utm_links || [];
+        const tooltip = links.length
+          ? links.map((l) => `${l.content || l.label}: ${l.url}`).join("\n")
+          : `utm_campaign=${campaign}`;
+        const linksMini = links.slice(0, 2).map((l) =>
+          `<div class="utm-links-mini" title="${escAttr(l.url)}">${escAttr(l.content || l.label)}</div>`
+        ).join("");
+        return `<span class="utm-badge" title="${escAttr(tooltip)}">${escAttr(campaign || "—")}</span>${linksMini}`;
+      }
 
       // --- Analytics ---
       async function loadAnalytics() {
         const days = document.getElementById("analyticsDays").value;
         try {
-          const { byDay, topLinks } = await requestJson(`/api/email/analytics?days=${days}`);
+          const { byDay, topLinks, utmCampaigns } = await requestJson(`/api/email/analytics?days=${days}`);
 
           // chart por dia
           const maxSent = Math.max(...byDay.map(d => d.sent), 1);
@@ -592,6 +744,18 @@
               </div>
               <div style="font-size:0.7rem;color:var(--muted);margin-bottom:6px;word-break:break-all">${l.url_clicked}</div>`).join("");
           document.getElementById("chartTopLinks").innerHTML = linksHtml;
+
+          const maxUtmSent = Math.max(...(utmCampaigns || []).map((c) => Number(c.sent)), 1);
+          const utmHtml = !(utmCampaigns || []).length
+            ? '<span style="color:var(--muted);font-size:0.85rem">Nenhum envio com UTM no período (novos disparos passam a registrar)</span>'
+            : utmCampaigns.map((c) => `
+              <div class="bar-row">
+                <code style="width:220px;font-size:0.72rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escAttr(c.utm_campaign)}">${escAttr(c.utm_campaign)}</code>
+                <div class="bar-bg"><div class="bar-fill" style="width:${Math.round(Number(c.sent) / maxUtmSent * 100)}%;background:var(--good,#3dd68c)"></div></div>
+                <span style="width:52px;text-align:right" title="Enviados">${c.sent} env.</span>
+                ${c.failed ? `<span style="width:40px;text-align:right;color:var(--bad);font-size:0.75rem" title="Falhas">${c.failed} falha</span>` : ""}
+              </div>`).join("");
+          document.getElementById("chartUtmCampaigns").innerHTML = utmHtml;
         } catch (e) { console.error(e); }
       }
 
@@ -607,7 +771,7 @@
           document.getElementById("nextHistory").disabled = data.length < state.historyLimit;
 
           if (!data.length) {
-            tbody.innerHTML = `<tr><td colspan="10" style="text-align:center;color:var(--muted)">Nenhum envio registrado</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="11" style="text-align:center;color:var(--muted)">Nenhum envio registrado</td></tr>`;
             return;
           }
           tbody.innerHTML = data.map(r => `
@@ -615,12 +779,13 @@
               <td>${r.id}</td>
               <td>${r.lead_name || "—"}</td>
               <td style="font-family:'IBM Plex Mono',monospace;font-size:0.8rem">${r.lead_email || "—"}</td>
-              <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${r.subject}">${r.subject}</td>
+              <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escAttr(r.subject)}">${r.subject}</td>
               <td>${statusBadge(r.status)}</td>
               <td style="text-align:center">${r.opens > 0 ? `<span style="color:var(--good)">${r.opens}</span>` : `<span style="color:var(--muted)">0</span>`}</td>
               <td style="text-align:center">${r.clicks > 0 ? `<span style="color:var(--accent)">${r.clicks}</span>` : `<span style="color:var(--muted)">0</span>`}</td>
+              <td style="max-width:170px">${renderUtmCell(r)}</td>
               <td>${fmt(r.sent_at)}</td>
-              <td style="color:var(--bad);font-size:0.8rem;max-width:120px;overflow:hidden;text-overflow:ellipsis" title="${r.error_message||''}">${r.error_message || ""}</td>
+              <td style="color:var(--bad);font-size:0.8rem;max-width:120px;overflow:hidden;text-overflow:ellipsis" title="${escAttr(r.error_message || "")}">${r.error_message || ""}</td>
               <td><button class="ghost" style="font-size:0.75rem;padding:2px 8px" onclick="unsubscribe(${r.lead_id})">Unsub</button></td>
             </tr>`).join("");
         } catch (e) { console.error(e); }

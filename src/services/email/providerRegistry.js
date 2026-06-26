@@ -3,13 +3,35 @@ const logger = require("../../config/logger");
 const { countSentTodayByProvider } = require("../../repositories/emailRepository");
 const { createBrevoProvider } = require("./providers/brevoProvider");
 const { createMailjetProvider } = require("./providers/mailjetProvider");
+const { createMailersendProvider } = require("./providers/mailersendProvider");
 
 const FACTORIES = {
   brevo: createBrevoProvider,
-  mailjet: createMailjetProvider
+  mailjet: createMailjetProvider,
+  mailersend: createMailersendProvider
 };
 
 let providers = null;
+const quotaExhausted = new Set();
+
+function isQuotaError(err) {
+  const msg = String(err?.message || "").toLowerCase();
+  const status = err?.cause?.response?.status ?? err?.response?.status;
+  return (
+    status === 429 ||
+    msg.includes("quota") ||
+    msg.includes("ms42901") ||
+    msg.includes("daily limit") ||
+    msg.includes("too many mails")
+  );
+}
+
+function markQuotaExhausted(name) {
+  if (!quotaExhausted.has(name)) {
+    quotaExhausted.add(name);
+    logger.warn({ provider: name }, "Provider marked exhausted due to API quota");
+  }
+}
 
 function getProviders() {
   if (providers) return providers;
@@ -39,7 +61,9 @@ async function getCapacityMap() {
   return list.map((p) => ({
     provider: p,
     sent: sentByName[p.name] || 0,
-    remaining: Math.max(0, p.dailyLimit - (sentByName[p.name] || 0))
+    remaining: quotaExhausted.has(p.name)
+      ? 0
+      : Math.max(0, p.dailyLimit - (sentByName[p.name] || 0))
   }));
 }
 
@@ -70,6 +94,7 @@ async function sendWithFallback(mailOptions) {
           : "No provider has remaining capacity"
       );
       err.providersExhausted = true;
+      err.quotaExhausted = !lastError;
       throw err;
     }
 
@@ -79,6 +104,9 @@ async function sendWithFallback(mailOptions) {
     } catch (err) {
       lastError = err;
       tried.push(provider.name);
+      if (isQuotaError(err)) {
+        markQuotaExhausted(provider.name);
+      }
       logger.warn(
         { provider: provider.name, err: err.message },
         "Provider failed, trying next"
@@ -89,6 +117,7 @@ async function sendWithFallback(mailOptions) {
 
 function resetForTests() {
   providers = null;
+  quotaExhausted.clear();
 }
 
 module.exports = {
@@ -97,5 +126,7 @@ module.exports = {
   getTotalRemaining,
   pickProvider,
   sendWithFallback,
+  isQuotaError,
+  markQuotaExhausted,
   resetForTests
 };

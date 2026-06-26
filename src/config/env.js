@@ -42,10 +42,16 @@ module.exports = {
         apiKey: process.env.MAILJET_API_KEY || "",
         secretKey: process.env.MAILJET_SECRET_KEY || "",
         dailyLimit: toNumber(process.env.MAILJET_DAILY_LIMIT, 200)
+      },
+      {
+        name: "mailersend",
+        apiKey: process.env.MAILERSEND_API_TOKEN || "",
+        dailyLimit: toNumber(process.env.MAILERSEND_DAILY_LIMIT, 100)
       }
     ].filter((p) => {
       if (p.name === "brevo") return !!p.apiKey;
       if (p.name === "mailjet") return !!p.apiKey && !!p.secretKey;
+      if (p.name === "mailersend") return !!p.apiKey;
       return false;
     })
   }

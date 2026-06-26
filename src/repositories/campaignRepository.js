@@ -17,8 +17,36 @@ function normalizeCampaignRow(row) {
   return {
     ...row,
     source_ids: parseJsonArray(row.source_ids),
-    field_areas: parseJsonArray(row.field_areas)
+    field_areas: parseJsonArray(row.field_areas),
+    min_days_since_email:
+      row.min_days_since_email != null ? Number(row.min_days_since_email) : null,
+    require_prior_email: !!row.require_prior_email
   };
+}
+
+function applyFollowUpFilters(query, { minDaysSinceEmail, requirePriorEmail } = {}) {
+  if (requirePriorEmail) {
+    query.whereExists(function () {
+      this.select("id")
+        .from("email_sends")
+        .whereRaw("email_sends.lead_id = leads.id")
+        .where("email_sends.status", "sent");
+    });
+  }
+
+  if (minDaysSinceEmail && minDaysSinceEmail > 0) {
+    const since = new Date();
+    since.setDate(since.getDate() - minDaysSinceEmail);
+    query.whereNotExists(function () {
+      this.select("id")
+        .from("email_sends")
+        .whereRaw("email_sends.lead_id = leads.id")
+        .where("email_sends.status", "sent")
+        .where("email_sends.sent_at", ">=", since);
+    });
+  }
+
+  return query;
 }
 
 function buildUniqueSlug(name, existingId = null) {
@@ -56,7 +84,7 @@ function applySegmentFilters(query, { sourceIds, fieldAreas }) {
   return query;
 }
 
-function baseEligibleQuery({ sourceIds, fieldAreas, campaignId }) {
+function baseEligibleQuery({ sourceIds, fieldAreas, campaignId, minDaysSinceEmail, requirePriorEmail }) {
   let query = db("leads")
     .where("leads.is_valid", true)
     .where("leads.is_active", true)
@@ -83,14 +111,28 @@ function baseEligibleQuery({ sourceIds, fieldAreas, campaignId }) {
     });
   }
 
+  applyFollowUpFilters(query, { minDaysSinceEmail, requirePriorEmail });
+
   return query;
 }
 
 async function countEligibleForCampaign(campaign) {
+  const stepRow = await db("email_campaign_steps")
+    .where({ campaign_id: campaign.id })
+    .count("id as count")
+    .first();
+
+  if (Number(stepRow?.count || 0) > 0) {
+    const { countEligibleLeadSteps } = require("./campaignStepRepository");
+    return countEligibleLeadSteps(campaign);
+  }
+
   const row = await baseEligibleQuery({
     sourceIds: campaign.source_ids,
     fieldAreas: campaign.field_areas,
-    campaignId: campaign.id
+    campaignId: campaign.id,
+    minDaysSinceEmail: campaign.min_days_since_email,
+    requirePriorEmail: campaign.require_prior_email
   })
     .count("leads.id as count")
     .first();
@@ -121,9 +163,23 @@ async function createCampaign(payload) {
     source_ids: JSON.stringify(payload.sourceIds || []),
     field_areas: JSON.stringify(payload.fieldAreas || []),
     daily_batch_size: payload.dailyBatchSize || null,
+    min_days_since_email: payload.minDaysSinceEmail || null,
+    require_prior_email: payload.requirePriorEmail === true,
     status: payload.status || "active",
     notes: payload.notes || null
   });
+
+  const { createStep, replaceAllSteps } = require("./campaignStepRepository");
+  if (Array.isArray(payload.steps) && payload.steps.length) {
+    await replaceAllSteps(id, payload.steps);
+  } else {
+    await createStep(id, {
+      subject: payload.subject,
+      template: payload.template,
+      minDaysSincePrevious: null
+    });
+  }
+
   return getCampaignById(id);
 }
 
@@ -143,6 +199,12 @@ async function updateCampaign(id, payload) {
   if (payload.sourceIds !== undefined) updates.source_ids = JSON.stringify(payload.sourceIds || []);
   if (payload.fieldAreas !== undefined) updates.field_areas = JSON.stringify(payload.fieldAreas || []);
   if (payload.dailyBatchSize !== undefined) updates.daily_batch_size = payload.dailyBatchSize || null;
+  if (payload.minDaysSinceEmail !== undefined) {
+    updates.min_days_since_email = payload.minDaysSinceEmail || null;
+  }
+  if (payload.requirePriorEmail !== undefined) {
+    updates.require_prior_email = payload.requirePriorEmail === true;
+  }
   if (payload.status !== undefined) updates.status = payload.status;
   if (payload.notes !== undefined) updates.notes = payload.notes || null;
 
@@ -186,11 +248,16 @@ async function getCampaignStats(campaignId) {
     .max("sent_at as last_sent_at")
     .first();
 
+  const { getStepStats } = require("./campaignStepRepository");
+  const steps = await getStepStats(campaignId);
+
   return {
     campaignId,
     sent,
     failed,
     eligible,
+    steps,
+    stepCount: steps.length,
     opens: events.open,
     clicks: events.click,
     unsubscribes: events.unsubscribe,
@@ -218,5 +285,6 @@ module.exports = {
   markCampaignDispatched,
   getCampaignStats,
   countEligibleForCampaign,
-  parseJsonArray
+  parseJsonArray,
+  applyFollowUpFilters
 };

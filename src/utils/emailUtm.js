@@ -67,10 +67,45 @@ function injectPortfolioUtms(html, subject, utmCampaign) {
   );
 }
 
+function resolveUtmCampaign(subject, utmCampaign) {
+  return slugifyUtm(utmCampaign || normalizeUtmCampaign(subject), "cold-outreach");
+}
+
+function extractUtmLinks(html) {
+  const links = [];
+  const seen = new Set();
+  const re = /<a\s+[^>]*href="(https?:\/\/[^"]+)"[^>]*>([\s\S]*?)<\/a>/gi;
+  let match = re.exec(html);
+  while (match) {
+    const url = match[1];
+    try {
+      const parsed = new URL(url);
+      const campaign = parsed.searchParams.get("utm_campaign");
+      if (!campaign) {
+        match = re.exec(html);
+        continue;
+      }
+      const content = parsed.searchParams.get("utm_content") || "";
+      const label = match[2].replace(/<[^>]+>/g, "").trim() || parsed.pathname || url;
+      const key = `${campaign}|${content}|${url}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        links.push({ label, url, content, campaign });
+      }
+    } catch {
+      // skip invalid URLs
+    }
+    match = re.exec(html);
+  }
+  return links;
+}
+
 module.exports = {
   slugifyUtm,
   normalizeUtmCampaign,
   shouldAppendUtm,
   appendUtmParams,
-  injectPortfolioUtms
+  injectPortfolioUtms,
+  resolveUtmCampaign,
+  extractUtmLinks
 };

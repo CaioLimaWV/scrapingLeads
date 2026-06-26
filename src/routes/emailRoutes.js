@@ -5,7 +5,8 @@ const {
   listEmailSends,
   markLeadUnsubscribed,
   getAnalyticsByDay,
-  getClickStats
+  getClickStats,
+  getUtmCampaignStats
 } = require("../repositories/emailRepository");
 const {
   listCampaignsWithStats,
@@ -14,6 +15,14 @@ const {
   updateCampaign,
   getCampaignStats
 } = require("../repositories/campaignRepository");
+const {
+  listStepsByCampaignId,
+  createStep,
+  updateStep,
+  deleteStep,
+  replaceAllSteps,
+  getStepStats
+} = require("../repositories/campaignStepRepository");
 
 const router = Router();
 
@@ -36,6 +45,18 @@ function parseIdArray(value) {
 function parseStringArray(value) {
   if (!Array.isArray(value)) return [];
   return value.map((v) => String(v).trim().toLowerCase()).filter(Boolean);
+}
+
+function parseStepsPayload(value) {
+  if (!Array.isArray(value)) return null;
+  return value
+    .map((step, index) => ({
+      subject: String(step.subject || "").trim(),
+      template: String(step.template || "").trim(),
+      minDaysSincePrevious:
+        index === 0 ? null : Number(step.minDaysSincePrevious ?? step.minDays ?? 3) || 3
+    }))
+    .filter((step) => step.subject && step.template);
 }
 
 function validateCampaignPayload(body, { partial = false } = {}) {
@@ -68,7 +89,8 @@ router.get("/campaigns/:id", async (req, res, next) => {
     const campaign = await getCampaignById(id);
     if (!campaign) return res.status(404).json({ message: "Campanha não encontrada" });
     const stats = await getCampaignStats(id);
-    res.json({ campaign, stats });
+    const steps = await getStepStats(id);
+    res.json({ campaign, stats, steps });
   } catch (err) {
     next(err);
   }
@@ -87,10 +109,12 @@ router.post("/campaigns", async (req, res, next) => {
       sourceIds: parseIdArray(req.body.sourceIds),
       fieldAreas: parseStringArray(req.body.fieldAreas),
       dailyBatchSize: req.body.dailyBatchSize ? Number(req.body.dailyBatchSize) : null,
-      notes: req.body.notes || null
+      notes: req.body.notes || null,
+      steps: parseStepsPayload(req.body.steps)
     });
     const stats = await getCampaignStats(campaign.id);
-    res.status(201).json({ campaign, stats });
+    const steps = await getStepStats(campaign.id);
+    res.status(201).json({ campaign, stats, steps });
   } catch (err) {
     next(err);
   }
@@ -114,9 +138,64 @@ router.put("/campaigns/:id", async (req, res, next) => {
       notes: req.body.notes
     });
     if (!campaign) return res.status(404).json({ message: "Campanha não encontrada" });
+
+    if (Array.isArray(req.body.steps)) {
+      const steps = parseStepsPayload(req.body.steps);
+      if (steps?.length) {
+        await replaceAllSteps(id, steps);
+      }
+    }
+
     const stats = await getCampaignStats(id);
-    res.json({ campaign, stats });
+    const steps = await getStepStats(id);
+    res.json({ campaign, stats, steps });
   } catch (err) {
+    next(err);
+  }
+});
+
+router.put("/campaigns/:id/steps", async (req, res, next) => {
+  try {
+    if (!checkToken(req, res)) return res.status(401).json({ message: "Unauthorized" });
+    const id = Number(req.params.id);
+    const campaign = await getCampaignById(id);
+    if (!campaign) return res.status(404).json({ message: "Campanha não encontrada" });
+
+    const steps = parseStepsPayload(req.body.steps);
+    if (!steps?.length) {
+      return res.status(400).json({ message: "Informe ao menos 1 email na sequência" });
+    }
+
+    const saved = await replaceAllSteps(id, steps);
+    const stats = await getCampaignStats(id);
+    res.json({ steps: saved, stats });
+  } catch (err) {
+    if (err.statusCode) return res.status(err.statusCode).json({ message: err.message });
+    next(err);
+  }
+});
+
+router.post("/campaigns/:id/steps", async (req, res, next) => {
+  try {
+    if (!checkToken(req, res)) return res.status(401).json({ message: "Unauthorized" });
+    const id = Number(req.params.id);
+    const campaign = await getCampaignById(id);
+    if (!campaign) return res.status(404).json({ message: "Campanha não encontrada" });
+
+    const { subject, template, minDaysSincePrevious } = req.body;
+    if (!subject?.trim() || !template?.trim()) {
+      return res.status(400).json({ message: "subject e template são obrigatórios" });
+    }
+
+    const step = await createStep(id, {
+      subject,
+      template,
+      minDaysSincePrevious: minDaysSincePrevious != null ? Number(minDaysSincePrevious) : 3
+    });
+    const stats = await getCampaignStats(id);
+    res.status(201).json({ step, stats });
+  } catch (err) {
+    if (err.statusCode) return res.status(err.statusCode).json({ message: err.message });
     next(err);
   }
 });
@@ -181,11 +260,12 @@ router.get("/history", async (req, res, next) => {
 router.get("/analytics", async (req, res, next) => {
   try {
     const days = Math.min(90, Math.max(1, Number(req.query.days) || 7));
-    const [byDay, topLinks] = await Promise.all([
+    const [byDay, topLinks, utmCampaigns] = await Promise.all([
       getAnalyticsByDay(days),
-      getClickStats(days)
+      getClickStats(days),
+      getUtmCampaignStats(days)
     ]);
-    res.json({ byDay, topLinks });
+    res.json({ byDay, topLinks, utmCampaigns });
   } catch (err) {
     next(err);
   }

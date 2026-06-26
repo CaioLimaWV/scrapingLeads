@@ -19,17 +19,36 @@ async function hasBeenEmailed(leadId) {
   return !!row;
 }
 
-async function logEmailSend(trx, { leadId, subject, bodyPreview, status, errorMessage, sentAt, trackingToken, provider, campaignId }) {
+async function logEmailSend(trx, {
+  leadId,
+  subject,
+  bodyPreview,
+  status,
+  errorMessage,
+  sentAt,
+  trackingToken,
+  provider,
+  campaignId,
+  campaignStepId,
+  utmCampaign,
+  utmLinks
+}) {
+  const utmLinksJson =
+    utmLinks && utmLinks.length ? JSON.stringify(utmLinks) : null;
+
   const rows = await (trx || db)("email_sends").insert({
     lead_id: leadId,
     campaign_id: campaignId || null,
+    campaign_step_id: campaignStepId || null,
     subject,
     body_preview: bodyPreview ? String(bodyPreview).slice(0, 500) : null,
     status,
     error_message: errorMessage || null,
     sent_at: sentAt || null,
     tracking_token: trackingToken || null,
-    provider: provider || null
+    provider: provider || null,
+    utm_campaign: utmCampaign || null,
+    utm_links: utmLinksJson
   });
   return Array.isArray(rows) ? rows[0] : rows;
 }
@@ -62,7 +81,17 @@ async function recordEvent(emailSendId, { eventType, urlClicked, ip }) {
   return emailSendId;
 }
 
-async function listEligibleLeads({ sourceId, sourceIds, fieldAreas, campaignId, limit }) {
+const { applyFollowUpFilters } = require("./campaignRepository");
+
+async function listEligibleLeads({
+  sourceId,
+  sourceIds,
+  fieldAreas,
+  campaignId,
+  limit,
+  minDaysSinceEmail,
+  requirePriorEmail
+}) {
   const ids = [
     ...(sourceIds || []).map(Number).filter((id) => Number.isInteger(id) && id > 0),
     ...(sourceId ? [Number(sourceId)] : [])
@@ -105,12 +134,15 @@ async function listEligibleLeads({ sourceId, sourceIds, fieldAreas, campaignId, 
     });
   }
 
+  applyFollowUpFilters(query, { minDaysSinceEmail, requirePriorEmail });
+
   return query.limit(limit);
 }
 
 async function listEmailSends({ limit = 50, offset = 0 }) {
   const rows = await db("email_sends as es")
     .join("leads as l", "es.lead_id", "l.id")
+    .leftJoin("email_campaigns as ec", "ec.id", "es.campaign_id")
     .select(
       "es.id",
       "es.lead_id",
@@ -121,7 +153,12 @@ async function listEmailSends({ limit = 50, offset = 0 }) {
       "es.error_message",
       "es.sent_at",
       "es.tracking_token",
-      "es.created_at"
+      "es.created_at",
+      "es.provider",
+      "es.utm_campaign",
+      "es.utm_links",
+      "ec.slug as campaign_slug",
+      "ec.name as campaign_name"
     )
     .orderBy("es.created_at", "desc")
     .limit(limit)
@@ -143,11 +180,23 @@ async function listEmailSends({ limit = 50, offset = 0 }) {
     eventMap[e.email_send_id][e.event_type] = Number(e.cnt);
   }
 
-  return rows.map((r) => ({
-    ...r,
-    opens: eventMap[r.id]?.open || 0,
-    clicks: eventMap[r.id]?.click || 0
-  }));
+  return rows.map((r) => {
+    let utmLinks = [];
+    if (r.utm_links) {
+      try {
+        utmLinks = JSON.parse(r.utm_links);
+      } catch {
+        utmLinks = [];
+      }
+    }
+    return {
+      ...r,
+      utm_campaign: r.utm_campaign || r.campaign_slug || null,
+      utm_links: utmLinks,
+      opens: eventMap[r.id]?.open || 0,
+      clicks: eventMap[r.id]?.click || 0
+    };
+  });
 }
 
 function normalizeDayKey(value) {
@@ -206,6 +255,39 @@ async function getClickStats(days = 30) {
     .limit(20);
 }
 
+async function getUtmCampaignStats(days = 7) {
+  const since = new Date();
+  since.setDate(since.getDate() - days);
+  since.setHours(0, 0, 0, 0);
+
+  const sentRows = await db("email_sends as es")
+    .leftJoin("email_campaigns as ec", "ec.id", "es.campaign_id")
+    .where("es.status", "sent")
+    .where("es.sent_at", ">=", since)
+    .select(db.raw("COALESCE(es.utm_campaign, ec.slug, 'sem-campanha') as utm_campaign"))
+    .count("es.id as sent")
+    .groupByRaw("COALESCE(es.utm_campaign, ec.slug, 'sem-campanha')")
+    .orderBy("sent", "desc");
+
+  const failedRows = await db("email_sends as es")
+    .leftJoin("email_campaigns as ec", "ec.id", "es.campaign_id")
+    .where("es.status", "failed")
+    .where("es.created_at", ">=", since)
+    .select(db.raw("COALESCE(es.utm_campaign, ec.slug, 'sem-campanha') as utm_campaign"))
+    .count("es.id as failed")
+    .groupByRaw("COALESCE(es.utm_campaign, ec.slug, 'sem-campanha')");
+
+  const failedMap = Object.fromEntries(
+    failedRows.map((r) => [r.utm_campaign, Number(r.failed)])
+  );
+
+  return sentRows.map((r) => ({
+    utm_campaign: r.utm_campaign,
+    sent: Number(r.sent),
+    failed: failedMap[r.utm_campaign] || 0
+  }));
+}
+
 async function markLeadUnsubscribed(leadId) {
   await db("leads").where("id", leadId).update({ email_unsubscribed: true });
 }
@@ -221,5 +303,6 @@ module.exports = {
   listEmailSends,
   getAnalyticsByDay,
   getClickStats,
+  getUtmCampaignStats,
   markLeadUnsubscribed
 };
