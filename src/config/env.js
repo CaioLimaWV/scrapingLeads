@@ -46,7 +46,7 @@ module.exports = {
       {
         name: "mailersend",
         apiKey: process.env.MAILERSEND_API_TOKEN || "",
-        dailyLimit: toNumber(process.env.MAILERSEND_DAILY_LIMIT, 100)
+        dailyLimit: toNumber(process.env.MAILERSEND_DAILY_LIMIT, 10)
       }
     ].filter((p) => {
       if (p.name === "brevo") return !!p.apiKey;

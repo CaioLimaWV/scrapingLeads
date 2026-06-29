@@ -1,6 +1,7 @@
 const axios = require("axios");
 
 const MAILERSEND_API_URL = "https://api.mailersend.com/v1/email";
+const MAILERSEND_QUOTA_URL = "https://api.mailersend.com/v1/api-quota";
 
 function parseAddress(value) {
   if (!value) return null;
@@ -27,6 +28,40 @@ function extractApiMessage(err) {
   return err.message;
 }
 
+function parseQuotaReset(value) {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+async function fetchMailersendApiQuota(apiKey) {
+  const response = await axios.get(MAILERSEND_QUOTA_URL, {
+    timeout: 10000,
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      accept: "application/json"
+    },
+    validateStatus: (status) => status < 500
+  });
+
+  if (response.status === 401) {
+    throw new Error("MailerSend API token is invalid (401)");
+  }
+  if (response.status !== 200) {
+    throw new Error(`MailerSend quota check failed (${response.status})`);
+  }
+
+  const headerRemaining = response.headers["x-apiquota-remaining"];
+  const headerReset = response.headers["x-apiquota-reset"];
+  const body = response.data || {};
+
+  return {
+    quota: Number(body.quota ?? headerRemaining ?? 0),
+    remaining: Number(body.remaining ?? headerRemaining ?? 0),
+    reset: parseQuotaReset(body.reset || headerReset)
+  };
+}
+
 function createMailersendProvider(config) {
   if (!config.apiKey) {
     throw new Error("MAILERSEND_API_TOKEN is required for mailersend provider");
@@ -46,6 +81,9 @@ function createMailersendProvider(config) {
   return {
     name: "mailersend",
     dailyLimit: config.dailyLimit,
+    async fetchApiQuota() {
+      return fetchMailersendApiQuota(config.apiKey);
+    },
     async send(mailOptions) {
       const from = parseAddress(mailOptions.from);
       const to = toRecipients(mailOptions.to);
@@ -75,4 +113,8 @@ function createMailersendProvider(config) {
   };
 }
 
-module.exports = { createMailersendProvider };
+module.exports = {
+  createMailersendProvider,
+  fetchMailersendApiQuota,
+  parseQuotaReset
+};

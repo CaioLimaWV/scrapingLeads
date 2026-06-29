@@ -1,6 +1,13 @@
 const env = require("../../config/env");
 const logger = require("../../config/logger");
 const { countSentTodayByProvider } = require("../../repositories/emailRepository");
+const {
+  isDailyQuotaError,
+  isRateLimitError,
+  isQuotaError,
+  parseResetHeader,
+  parseRetryAfterSeconds
+} = require("./quotaErrors");
 const { createBrevoProvider } = require("./providers/brevoProvider");
 const { createMailjetProvider } = require("./providers/mailjetProvider");
 const { createMailersendProvider } = require("./providers/mailersendProvider");
@@ -12,24 +19,71 @@ const FACTORIES = {
 };
 
 let providers = null;
-const quotaExhausted = new Set();
+const quotaBlockedUntil = new Map();
+const mailersendQuotaCache = { remaining: null, reset: null, fetchedAt: 0 };
+const MAILERSEND_QUOTA_CACHE_MS = 60_000;
 
-function isQuotaError(err) {
-  const msg = String(err?.message || "").toLowerCase();
-  const status = err?.cause?.response?.status ?? err?.response?.status;
-  return (
-    status === 429 ||
-    msg.includes("quota") ||
-    msg.includes("ms42901") ||
-    msg.includes("daily limit") ||
-    msg.includes("too many mails")
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isProviderBlocked(name) {
+  const until = quotaBlockedUntil.get(name);
+  if (!until) return false;
+  if (Date.now() >= until.getTime()) {
+    quotaBlockedUntil.delete(name);
+    return false;
+  }
+  return true;
+}
+
+function markQuotaExhausted(name, resetAt = null) {
+  const until = resetAt instanceof Date ? resetAt : null;
+  if (until) {
+    quotaBlockedUntil.set(name, until);
+  } else {
+    const nextUtcMidnight = new Date();
+    nextUtcMidnight.setUTCHours(24, 0, 0, 0);
+    quotaBlockedUntil.set(name, nextUtcMidnight);
+  }
+
+  if (name === "mailersend") {
+    mailersendQuotaCache.remaining = 0;
+    if (until) mailersendQuotaCache.reset = until;
+    mailersendQuotaCache.fetchedAt = Date.now();
+  }
+
+  logger.warn(
+    { provider: name, blockedUntil: quotaBlockedUntil.get(name)?.toISOString() },
+    "Provider marked exhausted due to API daily quota"
   );
 }
 
-function markQuotaExhausted(name) {
-  if (!quotaExhausted.has(name)) {
-    quotaExhausted.add(name);
-    logger.warn({ provider: name }, "Provider marked exhausted due to API quota");
+async function refreshMailersendQuota(provider) {
+  if (!provider?.fetchApiQuota) return null;
+
+  const cachedAge = Date.now() - mailersendQuotaCache.fetchedAt;
+  if (mailersendQuotaCache.remaining !== null && cachedAge < MAILERSEND_QUOTA_CACHE_MS) {
+    return mailersendQuotaCache;
+  }
+
+  try {
+    const quota = await provider.fetchApiQuota();
+    mailersendQuotaCache.remaining = quota.remaining;
+    mailersendQuotaCache.reset = quota.reset;
+    mailersendQuotaCache.quota = quota.quota;
+    mailersendQuotaCache.fetchedAt = Date.now();
+
+    if (quota.remaining <= 0) {
+      markQuotaExhausted("mailersend", quota.reset);
+    } else if (quota.reset) {
+      quotaBlockedUntil.delete("mailersend");
+    }
+
+    return mailersendQuotaCache;
+  } catch (err) {
+    logger.warn({ err: err.message }, "Failed to fetch MailerSend API quota");
+    return null;
   }
 }
 
@@ -53,18 +107,37 @@ function getProviders() {
   return providers;
 }
 
+async function getProviderRemaining(provider, sent) {
+  if (isProviderBlocked(provider.name)) {
+    return 0;
+  }
+
+  const fromLocalLimit = Math.max(0, provider.dailyLimit - sent);
+
+  if (provider.name !== "mailersend") {
+    return fromLocalLimit;
+  }
+
+  const apiQuota = await refreshMailersendQuota(provider);
+  if (!apiQuota || apiQuota.remaining === null) {
+    return fromLocalLimit;
+  }
+
+  return Math.min(fromLocalLimit, Math.max(0, apiQuota.remaining));
+}
+
 async function getCapacityMap() {
   const list = getProviders();
   const counts = await countSentTodayByProvider();
   const sentByName = Object.fromEntries(counts.map((r) => [r.provider, Number(r.count)]));
 
-  return list.map((p) => ({
-    provider: p,
-    sent: sentByName[p.name] || 0,
-    remaining: quotaExhausted.has(p.name)
-      ? 0
-      : Math.max(0, p.dailyLimit - (sentByName[p.name] || 0))
-  }));
+  const capacity = [];
+  for (const provider of list) {
+    const sent = sentByName[provider.name] || 0;
+    const remaining = await getProviderRemaining(provider, sent);
+    capacity.push({ provider, sent, remaining });
+  }
+  return capacity;
 }
 
 async function getTotalRemaining() {
@@ -79,6 +152,35 @@ async function pickProvider(excludeNames = []) {
     .sort((a, b) => b.remaining - a.remaining);
 
   return candidates.length > 0 ? candidates[0].provider : null;
+}
+
+async function sendWithProvider(provider, mailOptions) {
+  while (true) {
+    try {
+      await provider.send(mailOptions);
+      if (provider.name === "mailersend" && mailersendQuotaCache.remaining !== null) {
+        mailersendQuotaCache.remaining = Math.max(0, mailersendQuotaCache.remaining - 1);
+      }
+      return;
+    } catch (err) {
+      if (isDailyQuotaError(err)) {
+        markQuotaExhausted(provider.name, parseResetHeader(err));
+        throw err;
+      }
+
+      if (isRateLimitError(err)) {
+        const retryAfter = parseRetryAfterSeconds(err);
+        logger.warn(
+          { provider: provider.name, retryAfter },
+          "Provider rate limit hit, waiting before retry"
+        );
+        await sleep(retryAfter * 1000);
+        continue;
+      }
+
+      throw err;
+    }
+  }
 }
 
 async function sendWithFallback(mailOptions) {
@@ -99,13 +201,13 @@ async function sendWithFallback(mailOptions) {
     }
 
     try {
-      await provider.send(mailOptions);
+      await sendWithProvider(provider, mailOptions);
       return { providerName: provider.name };
     } catch (err) {
       lastError = err;
       tried.push(provider.name);
-      if (isQuotaError(err)) {
-        markQuotaExhausted(provider.name);
+      if (isQuotaError(err) && !isRateLimitError(err)) {
+        markQuotaExhausted(provider.name, parseResetHeader(err));
       }
       logger.warn(
         { provider: provider.name, err: err.message },
@@ -117,7 +219,11 @@ async function sendWithFallback(mailOptions) {
 
 function resetForTests() {
   providers = null;
-  quotaExhausted.clear();
+  quotaBlockedUntil.clear();
+  mailersendQuotaCache.remaining = null;
+  mailersendQuotaCache.reset = null;
+  mailersendQuotaCache.quota = null;
+  mailersendQuotaCache.fetchedAt = 0;
 }
 
 module.exports = {
@@ -126,7 +232,6 @@ module.exports = {
   getTotalRemaining,
   pickProvider,
   sendWithFallback,
-  isQuotaError,
   markQuotaExhausted,
   resetForTests
 };

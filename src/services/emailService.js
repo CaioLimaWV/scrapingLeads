@@ -491,12 +491,31 @@ async function getEmailStatus() {
     delayMinMs: env.email.delayMinMs,
     delayMaxMs: env.email.delayMaxMs,
     defaultBatch: env.email.defaultBatch,
-    providers: capacity.map((c) => ({
-      name: c.provider.name,
-      sentToday: c.sent,
-      dailyLimit: c.provider.dailyLimit,
-      remaining: c.remaining
-    }))
+    providers: await Promise.all(
+      capacity.map(async (c) => {
+        const entry = {
+          name: c.provider.name,
+          sentToday: c.sent,
+          dailyLimit: c.provider.dailyLimit,
+          remaining: c.remaining
+        };
+
+        if (c.provider.name === "mailersend" && c.provider.fetchApiQuota) {
+          try {
+            const apiQuota = await c.provider.fetchApiQuota();
+            entry.apiQuota = {
+              quota: apiQuota.quota,
+              remaining: apiQuota.remaining,
+              reset: apiQuota.reset?.toISOString() || null
+            };
+          } catch (err) {
+            entry.apiQuota = { error: err.message };
+          }
+        }
+
+        return entry;
+      })
+    )
   };
 }
 
