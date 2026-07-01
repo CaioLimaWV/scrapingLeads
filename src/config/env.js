@@ -47,12 +47,25 @@ module.exports = {
         name: "mailersend",
         apiKey: process.env.MAILERSEND_API_TOKEN || "",
         dailyLimit: toNumber(process.env.MAILERSEND_DAILY_LIMIT, 10)
+      },
+      {
+        name: "sendgrid",
+        apiKey: process.env.SENDGRID_API_KEY || "",
+        dailyLimit: toNumber(process.env.SENDGRID_DAILY_LIMIT, 100)
+      },
+      {
+        name: "resend",
+        apiKey: process.env.RESEND_API_KEY || "",
+        dailyLimit: toNumber(process.env.RESEND_DAILY_LIMIT, 100)
+      },
+      {
+        name: "elasticemail",
+        apiKey: process.env.ELASTIC_EMAIL_API_KEY || "",
+        dailyLimit: toNumber(process.env.ELASTIC_EMAIL_DAILY_LIMIT, 100)
       }
     ].filter((p) => {
-      if (p.name === "brevo") return !!p.apiKey;
       if (p.name === "mailjet") return !!p.apiKey && !!p.secretKey;
-      if (p.name === "mailersend") return !!p.apiKey;
-      return false;
+      return !!p.apiKey;
     })
   }
 };

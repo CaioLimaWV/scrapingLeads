@@ -13,6 +13,9 @@ function isDailyQuotaError(err) {
     msg.includes("ms42901") ||
     msg.includes("daily quota") ||
     msg.includes("daily api quota") ||
+    msg.includes("maximum credits exceeded") ||
+    msg.includes("daily sending quota") ||
+    msg.includes("exceeded your quota") ||
     (status === 429 && msg.includes("quota limit"))
   );
 }
@@ -24,7 +27,13 @@ function isRateLimitError(err) {
 }
 
 function isQuotaError(err) {
-  return isDailyQuotaError(err) || isRateLimitError(err) || getErrorMessage(err).includes("too many mails");
+  const msg = getErrorMessage(err);
+  return (
+    isDailyQuotaError(err) ||
+    isRateLimitError(err) ||
+    msg.includes("too many mails") ||
+    msg.includes("rate limit exceeded")
+  );
 }
 
 function parseResetHeader(err) {

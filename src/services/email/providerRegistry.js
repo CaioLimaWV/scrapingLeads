@@ -9,13 +9,19 @@ const {
   parseRetryAfterSeconds
 } = require("./quotaErrors");
 const { createBrevoProvider } = require("./providers/brevoProvider");
+const { createElasticEmailProvider } = require("./providers/elasticEmailProvider");
 const { createMailjetProvider } = require("./providers/mailjetProvider");
 const { createMailersendProvider } = require("./providers/mailersendProvider");
+const { createResendProvider } = require("./providers/resendProvider");
+const { createSendgridProvider } = require("./providers/sendgridProvider");
 
 const FACTORIES = {
   brevo: createBrevoProvider,
+  elasticemail: createElasticEmailProvider,
   mailjet: createMailjetProvider,
-  mailersend: createMailersendProvider
+  mailersend: createMailersendProvider,
+  resend: createResendProvider,
+  sendgrid: createSendgridProvider
 };
 
 let providers = null;
