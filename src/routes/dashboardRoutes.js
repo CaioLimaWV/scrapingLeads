@@ -1,5 +1,9 @@
 const express = require("express");
-const { countLeads, countInferredGenderLeads } = require("../repositories/leadRepository");
+const {
+  countLeads,
+  countInferredGenderLeads,
+  countEmailContactBreakdown
+} = require("../repositories/leadRepository");
 const { getExecutionStats } = require("../repositories/executionRepository");
 const { listSources } = require("../repositories/sourceRepository");
 
@@ -7,9 +11,10 @@ const router = express.Router();
 
 router.get("/summary", async (req, res, next) => {
   try {
-    const [totalLeads, inferredGender, executionStats, sources] = await Promise.all([
+    const [totalLeads, inferredGender, emailBreakdown, executionStats, sources] = await Promise.all([
       countLeads(),
       countInferredGenderLeads(),
+      countEmailContactBreakdown(),
       getExecutionStats(),
       listSources()
     ]);
@@ -21,6 +26,7 @@ router.get("/summary", async (req, res, next) => {
         totalLeads,
         femaleLeads: inferredGender.female,
         maleLeads: inferredGender.male,
+        emailBreakdown,
         activeSources,
         statuses: executionStats.statusTotals,
         latestExecution: executionStats.latestExecution

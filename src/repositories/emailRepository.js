@@ -289,7 +289,70 @@ async function getUtmCampaignStats(days = 7) {
 }
 
 async function markLeadUnsubscribed(leadId) {
-  await db("leads").where("id", leadId).update({ email_unsubscribed: true });
+  await db("leads").where("id", leadId).update({
+    email_unsubscribed: true,
+    suppressed_at: db.fn.now(),
+    updated_at: db.fn.now()
+  });
+}
+
+const VALID_EVENT_TYPES = new Set(["open", "click", "unsubscribe"]);
+
+async function listLeadEmailEvents(leadId, { limit = 50, offset = 0, eventType = null } = {}) {
+  const lead = await db("leads")
+    .select("id", "name", "email")
+    .where({ id: leadId })
+    .first();
+
+  if (!lead) return null;
+
+  let countQuery = db("email_events as ee")
+    .join("email_sends as es", "es.id", "ee.email_send_id")
+    .where("es.lead_id", leadId);
+
+  if (eventType) {
+    countQuery = countQuery.where("ee.event_type", eventType);
+  }
+
+  const totalRow = await countQuery.clone().count("ee.id as count").first();
+  const total = Number(totalRow?.count || 0);
+
+  let eventsQuery = db("email_events as ee")
+    .join("email_sends as es", "es.id", "ee.email_send_id")
+    .leftJoin("email_campaigns as ec", "ec.id", "es.campaign_id")
+    .where("es.lead_id", leadId)
+    .select(
+      "ee.id",
+      "ee.event_type",
+      "ee.url_clicked",
+      "ee.ip",
+      "ee.occurred_at",
+      "es.id as email_send_id",
+      "es.subject as email_subject",
+      "es.sent_at as email_sent_at",
+      "es.provider",
+      "es.utm_campaign",
+      "ec.name as campaign_name",
+      "ec.slug as campaign_slug"
+    )
+    .orderBy("ee.occurred_at", "desc")
+    .limit(limit)
+    .offset(offset);
+
+  if (eventType) {
+    eventsQuery = eventsQuery.where("ee.event_type", eventType);
+  }
+
+  const events = await eventsQuery;
+
+  return {
+    lead,
+    events: events.map((e) => ({
+      ...e,
+      utm_campaign: e.utm_campaign || e.campaign_slug || null
+    })),
+    total
+  };
 }
 
 module.exports = {
@@ -304,5 +367,7 @@ module.exports = {
   getAnalyticsByDay,
   getClickStats,
   getUtmCampaignStats,
-  markLeadUnsubscribed
+  markLeadUnsubscribed,
+  listLeadEmailEvents,
+  VALID_EVENT_TYPES
 };

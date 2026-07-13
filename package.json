@@ -11,7 +11,9 @@
         "migrate:rollback": "knex migrate:rollback",
         "migrate:make": "knex migrate:make",
         "scrape:manual": "node scripts/scrape.js",
+        "enrich:email": "node scripts/enrich-leads-email.js",
         "engagement:recalculate": "node scripts/recalculate-engagement.js",
+        "email:test-mailersend": "node scripts/test-mailersend.js",
         "test": "jest --runInBand",
         "lint": "eslint src scripts"
     },

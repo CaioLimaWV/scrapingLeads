@@ -16,10 +16,6 @@
       .template-area:focus { outline: 2px solid var(--accent); }
       .hint { font-size: 0.75rem; color: var(--muted); margin-top: 0.25rem; }
       .dryrun-badge { font-size: 0.7rem; background: var(--accent-2, #f0b429); color: #000; padding: 2px 8px; border-radius: 99px; font-weight: 700; vertical-align: middle; margin-left: 6px; }
-      .nav-links { display: flex; gap: 1rem; align-items: center; }
-      .nav-links a { color: var(--muted); font-size: 0.85rem; text-decoration: none; }
-      .nav-links a:hover { color: var(--accent); }
-      .nav-links a.active { color: var(--ink); font-weight: 600; }
       .tracking-off { background: rgba(240,180,41,.15); border: 1px solid rgba(240,180,41,.4); border-radius: 6px; padding: 0.5rem 0.9rem; font-size: 0.8rem; color: var(--ink); margin-bottom: 0.5rem; }
       .link-helper { display: flex; gap: 0.5rem; align-items: flex-end; flex-wrap: wrap; margin-bottom: 0.5rem; }
       .link-helper input { flex: 1; min-width: 160px; }
@@ -73,15 +69,22 @@
         <p class="eyebrow">Lead Operations</p>
         <h1>Campanhas de Email</h1>
       </div>
-      <div class="nav-links">
+      <nav class="nav-links" aria-label="Navegação do painel">
         <a href="/panel/">Scraping</a>
-        <a href="/panel/engagement">Funil</a>
+        <a href="/panel/engagement">Engajamento</a>
         <a href="/panel/whatsapp">WhatsApp</a>
         <a href="/panel/email" class="active">Email</a>
-      </div>
+        <a href="/panel/contacts">Contatos</a>
+        <a href="/panel/prospeccao">Prospecção</a>
+        <a href="/panel/ops">Operações</a>
+      </nav>
     </header>
 
     <main class="layout">
+      <p style="margin:0 0 12px;font-size:0.85rem;color:var(--muted)">
+        Lead respondeu pedindo descadastro ou outro email?
+        <a href="/panel/contacts">Gerenciar inativacao em Contatos</a>
+      </p>
 
       <!-- Cards de status do dia -->
       <section class="cards">
@@ -155,7 +158,7 @@
       <section class="panel run-panel">
         <div>
           <h3>Disparar Campanha</h3>
-          <p>Configure o assunto e o corpo do email. Use <code>{{nome}}</code> para personalizar.</p>
+          <p>Configure o assunto e o corpo do email. Use <code>{{nome}}</code> no assunto e no corpo para personalizar.</p>
         </div>
 
         <div id="trackingOffBanner" class="tracking-off" style="display:none">
@@ -368,7 +371,8 @@
           state.emailConfig = {
             delayMinMs: d.delayMinMs,
             delayMaxMs: d.delayMaxMs,
-            defaultBatch: d.defaultBatch
+            defaultBatch: d.defaultBatch,
+            mailersendRemaining: d.mailersend?.remaining || 0
           };
           const timingEl = document.getElementById("emailTimingHint");
           if (d.delayMinMs != null && d.delayMaxMs != null) {
@@ -393,6 +397,19 @@
           }
           if (d.monitorTo) {
             lines.push(`✓ <strong>Cópia monitor</strong> — a cada disparo real você recebe o mesmo email em <code>${d.monitorTo}</code> (assunto e corpo iguais aos leads, <code>{{nome}}</code> → nome do monitor).`);
+          }
+          const ms = d.mailersend || {};
+          const onlyMailersend =
+            Array.isArray(d.providers) &&
+            d.providers.filter((p) => p.remaining > 0).length === 1 &&
+            d.providers.some((p) => p.name === "mailersend" && p.remaining > 0);
+          state.preferMailersend = onlyMailersend;
+
+          if (onlyMailersend && ms.remaining > 0) {
+            lines.push(`ℹ️ <strong>Só MailerSend restante hoje</strong> — o disparo usará até <strong>${ms.remaining}</strong> envio(s) via MailerSend (cópia monitor desativada neste modo).`);
+          }
+          if (ms.lastError) {
+            lines.push(`⚠️ <strong>MailerSend bloqueado</strong> — ${ms.lastError}. Verifique conta/domínio/token em <a href="https://app.mailersend.com" target="_blank" rel="noopener">MailerSend</a> ou rode <code>npm run email:test-mailersend -- --to=seu@email.com</code>.`);
           }
           if (lines.length) {
             banner.innerHTML = lines.join(" ");
@@ -570,6 +587,7 @@
                   </div>
                   <div class="campaign-actions">
                     <button type="button" class="ghost" data-dispatch="${c.id}">Disparar</button>
+                    <button type="button" class="ghost" data-dispatch-ms="${c.id}" title="Força envio via MailerSend (warmup diário)">MailerSend</button>
                     <button type="button" class="ghost" data-dryrun="${c.id}">Dry Run</button>
                     <button type="button" class="ghost" data-edit="${c.id}">Editar</button>
                     <button type="button" class="ghost" data-toggle="${c.id}" data-status="${c.status}">${c.status === "paused" ? "Ativar" : "Pausar"}</button>
@@ -588,6 +606,8 @@
 
           list.querySelectorAll("[data-dispatch]").forEach((btn) =>
             btn.addEventListener("click", () => dispatchSavedCampaign(btn.dataset.dispatch, false)));
+          list.querySelectorAll("[data-dispatch-ms]").forEach((btn) =>
+            btn.addEventListener("click", () => dispatchSavedCampaign(btn.dataset.dispatchMs, false, { preferProvider: "mailersend" })));
           list.querySelectorAll("[data-dryrun]").forEach((btn) =>
             btn.addEventListener("click", () => dispatchSavedCampaign(btn.dataset.dryrun, true)));
           list.querySelectorAll("[data-edit]").forEach((btn) =>
@@ -654,30 +674,42 @@
         }
       }
 
-      async function dispatchSavedCampaign(id, dryRun) {
+      async function dispatchSavedCampaign(id, dryRun, options = {}) {
         const token = document.getElementById("runToken").value.trim();
         const campaign = state.campaigns?.find((c) => String(c.id) === String(id));
         const batchSize = campaign?.daily_batch_size || state.emailConfig?.defaultBatch;
-        setStatus(dispatchWaitHint(dryRun, { batchSize, savedCampaign: true }), true);
-        document.querySelectorAll("[data-dispatch],[data-dryrun]").forEach((btn) => { btn.disabled = true; });
+        const preferProvider = options.preferProvider || (state.preferMailersend ? "mailersend" : null);
+        const effectiveBatch = state.preferMailersend
+          ? Math.min(batchSize, state.emailConfig?.mailersendRemaining || batchSize)
+          : batchSize;
+        setStatus(
+          preferProvider === "mailersend" && !dryRun
+            ? `Disparando via MailerSend (até ${effectiveBatch} leads, ${formatDelayRange(state.emailConfig?.delayMinMs, state.emailConfig?.delayMaxMs)} entre envios)...`
+            : dispatchWaitHint(dryRun, { batchSize, savedCampaign: true }),
+          true
+        );
+        document.querySelectorAll("[data-dispatch],[data-dryrun],[data-dispatch-ms]").forEach((btn) => { btn.disabled = true; });
         try {
           const { totals } = await requestJson(`/api/email/campaigns/${id}/dispatch`, {
             method: "POST",
             headers: { "Content-Type": "application/json", ...(token ? { "x-panel-token": token } : {}) },
-            body: JSON.stringify({ dryRun })
+            body: JSON.stringify({ dryRun, preferProvider })
           });
           const prefix = dryRun ? "[DRY RUN] " : "";
           const monitorNote = totals.monitorSent ? " | Cópia monitor enviada" : "";
+          const byProvider = totals.byProvider
+            ? ` | Provedores: ${Object.entries(totals.byProvider).map(([k, v]) => `${k}=${v}`).join(", ")}`
+            : "";
           const byStep = totals.byStep
             ? ` | Por email: ${Object.entries(totals.byStep).map(([k, v]) => `#${k}=${v}`).join(", ")}`
             : "";
-          setStatus(`${prefix}Enviados: ${totals.sent} | Falhos: ${totals.failed} | Pulados: ${totals.skipped} | Elegíveis restantes: ${totals.remaining}${byStep}${monitorNote}`, true);
+          setStatus(`${prefix}Enviados: ${totals.sent} | Falhos: ${totals.failed} | Pulados: ${totals.skipped} | Elegíveis restantes: ${totals.remaining}${byStep}${byProvider}${monitorNote}`, totals.sent > 0 || dryRun);
           await Promise.all([loadStatus(), loadHistory(), loadCampaigns()]);
           loadAnalytics().catch((e) => console.error("Analytics:", e));
         } catch (e) {
           setStatus(`Erro: ${e.message}`, false);
         } finally {
-          document.querySelectorAll("[data-dispatch],[data-dryrun]").forEach((btn) => { btn.disabled = false; });
+          document.querySelectorAll("[data-dispatch],[data-dryrun],[data-dispatch-ms]").forEach((btn) => { btn.disabled = false; });
         }
       }
 

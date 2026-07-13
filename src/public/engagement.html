@@ -20,9 +20,36 @@
       .matrix-item { background:var(--bg-2); border:1px solid var(--border); border-radius:8px; padding:10px; text-align:center }
       .matrix-num { font-size:1.3rem; font-weight:700; font-family:"IBM Plex Mono",monospace }
       .matrix-label { font-size:0.72rem; color:var(--muted); margin-top:4px }
-      .nav-links { display:flex; gap:1rem; align-items:center }
-      .nav-links a { color:var(--muted); font-size:0.85rem; text-decoration:none }
-      .nav-links a.active { color:var(--ink); font-weight:600 }
+      .lead-row { cursor:pointer }
+      .lead-row:hover td { background:rgba(15,122,106,.06) }
+      .timeline-overlay { position:fixed; inset:0; background:rgba(20,30,30,.45); z-index:100; display:none; align-items:center; justify-content:center; padding:16px }
+      .timeline-overlay.open { display:flex }
+      .timeline-modal { width:min(720px,100%); max-height:min(88vh,900px); background:var(--card); border:1px solid var(--border); border-radius:16px; box-shadow:0 20px 60px rgba(20,30,30,.18); display:grid; grid-template-rows:auto auto 1fr auto; overflow:hidden }
+      .timeline-head { display:flex; justify-content:space-between; gap:12px; align-items:flex-start; padding:16px 18px; border-bottom:1px solid var(--border) }
+      .timeline-head h3 { margin:0; font-size:1.1rem }
+      .timeline-sub { margin:4px 0 0; font-size:0.8rem; color:var(--muted) }
+      .timeline-toolbar { display:flex; gap:10px; align-items:center; flex-wrap:wrap; padding:12px 18px; border-bottom:1px solid var(--border) }
+      .timeline-toolbar select { min-width:140px }
+      .timeline-body { overflow:auto; padding:14px 18px }
+      .timeline-empty { text-align:center; color:var(--muted); padding:32px 12px; font-size:0.9rem }
+      .timeline-list { display:grid; gap:10px }
+      .timeline-item { display:grid; grid-template-columns:36px 1fr; gap:12px; align-items:start; padding:12px; border:1px solid var(--border); border-radius:12px; background:rgba(255,255,255,.55) }
+      .timeline-icon { width:36px; height:36px; border-radius:10px; display:flex; align-items:center; justify-content:center; font-size:1rem; font-weight:700 }
+      .evt-open .timeline-icon { background:rgba(140,180,255,.2); color:#3d6db5 }
+      .evt-click .timeline-icon { background:rgba(46,139,87,.18); color:var(--good) }
+      .evt-unsubscribe .timeline-icon { background:rgba(169,60,60,.15); color:var(--bad) }
+      .timeline-meta { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:4px }
+      .evt-label { font-size:0.72rem; font-weight:700; text-transform:uppercase; letter-spacing:.04em; padding:2px 8px; border-radius:99px }
+      .evt-open .evt-label { background:rgba(140,180,255,.2); color:#3d6db5 }
+      .evt-click .evt-label { background:rgba(46,139,87,.18); color:var(--good) }
+      .evt-unsubscribe .evt-label { background:rgba(169,60,60,.15); color:var(--bad) }
+      .click-type { font-size:0.72rem; color:var(--muted); background:rgba(31,42,42,.06); padding:2px 8px; border-radius:99px }
+      .timeline-subject { font-weight:600; font-size:0.9rem; margin:0 0 4px }
+      .timeline-detail { font-size:0.78rem; color:var(--muted); line-height:1.45 }
+      .timeline-url { display:block; margin-top:6px; font-family:"IBM Plex Mono",monospace; font-size:0.72rem; color:var(--accent); word-break:break-all; text-decoration:none }
+      .timeline-url:hover { text-decoration:underline }
+      .timeline-foot { display:flex; justify-content:space-between; align-items:center; gap:10px; padding:12px 18px; border-top:1px solid var(--border) }
+      .timeline-count { font-size:0.78rem; color:var(--muted); font-family:"IBM Plex Mono",monospace }
     </style>
   </head>
   <body>
@@ -34,12 +61,15 @@
         <p class="eyebrow">Lead Operations</p>
         <h1>Funil &amp; Engajamento</h1>
       </div>
-      <div class="nav-links">
+      <nav class="nav-links" aria-label="Navegação do painel">
         <a href="/panel/">Scraping</a>
-        <a href="/panel/engagement" class="active">Funil</a>
+        <a href="/panel/engagement" class="active">Engajamento</a>
         <a href="/panel/whatsapp">WhatsApp</a>
         <a href="/panel/email">Email</a>
-      </div>
+        <a href="/panel/contacts">Contatos</a>
+        <a href="/panel/prospeccao">Prospecção</a>
+        <a href="/panel/ops">Operações</a>
+      </nav>
     </header>
 
     <main class="layout">
@@ -108,6 +138,7 @@
                 <th>Funil</th>
                 <th>Próxima ação</th>
                 <th>Última interação</th>
+                <th></th>
               </tr>
             </thead>
             <tbody id="leadsBody"></tbody>
@@ -116,8 +147,47 @@
       </section>
     </main>
 
+    <div id="timelineOverlay" class="timeline-overlay" aria-hidden="true">
+      <div class="timeline-modal" role="dialog" aria-labelledby="timelineTitle">
+        <div class="timeline-head">
+          <div>
+            <h3 id="timelineTitle">Timeline de email</h3>
+            <p class="timeline-sub" id="timelineLeadInfo">—</p>
+          </div>
+          <button id="timelineClose" type="button" class="ghost">Fechar</button>
+        </div>
+        <div class="timeline-toolbar">
+          <label>Tipo
+            <select id="timelineFilter">
+              <option value="">Todos</option>
+              <option value="open">Aberturas</option>
+              <option value="click">Cliques</option>
+              <option value="unsubscribe">Descadastros</option>
+            </select>
+          </label>
+          <button id="timelineRefresh" type="button" class="ghost">Atualizar</button>
+        </div>
+        <div class="timeline-body" id="timelineBody">
+          <p class="timeline-empty">Carregando...</p>
+        </div>
+        <div class="timeline-foot">
+          <span class="timeline-count" id="timelineCount">—</span>
+          <div class="row-gap">
+            <button id="timelinePrev" type="button" class="ghost">Anterior</button>
+            <span id="timelinePage" class="page-label">Página 1</span>
+            <button id="timelineNext" type="button" class="ghost">Próxima</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <script>
       const state = { offset: 0, limit: 30 };
+      const timeline = { leadId: null, offset: 0, limit: 20, eventType: "" };
+
+      const EVENT_LABELS = { open: "Abertura", click: "Clique", unsubscribe: "Descadastro" };
+      const EVENT_ICONS = { open: "◎", click: "↗", unsubscribe: "✕" };
+      const CLICK_LABELS = { whatsapp: "WhatsApp", portfolio: "Portfólio", schedule: "Agendamento", generic: "Link" };
 
       function tempBadge(t) {
         const labels = { cold: "Frio", warm: "Morno", hot: "Quente", lost: "Fora" };
@@ -132,6 +202,19 @@
       function fmtDate(v) {
         if (!v) return "—";
         return new Date(v).toLocaleString("pt-BR");
+      }
+
+      function escapeHtml(str) {
+        return String(str ?? "")
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;");
+      }
+
+      function safeHref(url) {
+        const value = String(url || "");
+        return /^https?:\/\//i.test(value) ? value : "#";
       }
 
       async function requestJson(url, options = {}) {
@@ -166,15 +249,26 @@
 
         for (const row of data) {
           const tr = document.createElement("tr");
+          tr.className = "lead-row";
+          tr.title = "Ver timeline de email";
           tr.innerHTML = `
             <td>${row.id}</td>
-            <td>${row.name || "—"}</td>
-            <td>${row.email}</td>
+            <td>${escapeHtml(row.name) || "—"}</td>
+            <td>${escapeHtml(row.email)}</td>
             <td><strong>${row.engagement_score ?? 0}</strong></td>
             <td>${tempBadge(row.temperature || "cold")}</td>
             <td>${funnelLabel(row.funnel_stage || "top")}</td>
-            <td class="action-cell">${row.next_action || "—"}</td>
-            <td>${fmtDate(row.last_engagement_at)}</td>`;
+            <td class="action-cell">${escapeHtml(row.next_action) || "—"}</td>
+            <td>${fmtDate(row.last_engagement_at)}</td>
+            <td><button type="button" class="ghost timeline-btn">Timeline</button></td>`;
+          tr.addEventListener("click", (e) => {
+            if (e.target.closest(".timeline-btn")) return;
+            openTimeline(row.id, row.name, row.email);
+          });
+          tr.querySelector(".timeline-btn").addEventListener("click", (e) => {
+            e.stopPropagation();
+            openTimeline(row.id, row.name, row.email);
+          });
           tbody.appendChild(tr);
         }
 
@@ -186,6 +280,119 @@
 
       async function refreshAll() {
         await Promise.all([loadSummary(), loadLeads()]);
+      }
+
+      function renderTimelineEvent(ev) {
+        const cls = `evt-${ev.event_type}`;
+        const label = EVENT_LABELS[ev.event_type] || ev.event_type;
+        const icon = EVENT_ICONS[ev.event_type] || "•";
+        const clickType = ev.click_type ? `<span class="click-type">${escapeHtml(CLICK_LABELS[ev.click_type] || ev.click_type)}</span>` : "";
+        const url = ev.url_clicked
+          ? `<a class="timeline-url" href="${escapeHtml(safeHref(ev.url_clicked))}" target="_blank" rel="noopener noreferrer">${escapeHtml(ev.url_clicked)}</a>`
+          : "";
+        const campaign = ev.campaign_name || ev.utm_campaign
+          ? `<div class="timeline-detail">Campanha: ${escapeHtml(ev.campaign_name || ev.utm_campaign)}</div>`
+          : "";
+        const provider = ev.provider ? `<div class="timeline-detail">Provedor: ${escapeHtml(ev.provider)}</div>` : "";
+        const sentAt = ev.email_sent_at ? `<div class="timeline-detail">Enviado em ${fmtDate(ev.email_sent_at)}</div>` : "";
+
+        return `<article class="timeline-item ${cls}">
+          <div class="timeline-icon" aria-hidden="true">${icon}</div>
+          <div>
+            <div class="timeline-meta">
+              <span class="evt-label">${label}</span>
+              ${clickType}
+              <span class="timeline-detail">${fmtDate(ev.occurred_at)}</span>
+            </div>
+            <p class="timeline-subject">${escapeHtml(ev.email_subject) || "Sem assunto"}</p>
+            ${sentAt}
+            ${campaign}
+            ${provider}
+            ${url}
+          </div>
+        </article>`;
+      }
+
+      async function loadTimeline() {
+        if (!timeline.leadId) return;
+        const body = document.getElementById("timelineBody");
+        body.innerHTML = '<p class="timeline-empty">Carregando...</p>';
+
+        const qs = new URLSearchParams({
+          limit: String(timeline.limit),
+          offset: String(timeline.offset)
+        });
+        if (timeline.eventType) qs.set("event_type", timeline.eventType);
+
+        try {
+          const { data, pagination } = await requestJson(`/api/leads/${timeline.leadId}/email-events?${qs}`);
+          const events = data.events || [];
+          const total = pagination?.total ?? events.length;
+
+          if (data.lead) {
+            const { name, email } = data.lead;
+            document.getElementById("timelineTitle").textContent = `Timeline — ${name || `Lead #${timeline.leadId}`}`;
+            document.getElementById("timelineLeadInfo").textContent = [name, email].filter(Boolean).join(" · ") || `Lead #${timeline.leadId}`;
+          }
+
+          if (!events.length) {
+            body.innerHTML = '<p class="timeline-empty">Nenhuma interação registrada para este lead.</p>';
+          } else {
+            body.innerHTML = `<div class="timeline-list">${events.map(renderTimelineEvent).join("")}</div>`;
+          }
+
+          const page = Math.floor(timeline.offset / timeline.limit) + 1;
+          document.getElementById("timelineCount").textContent = `${total} evento${total === 1 ? "" : "s"}`;
+          document.getElementById("timelinePage").textContent = `Página ${page}`;
+          document.getElementById("timelinePrev").disabled = timeline.offset === 0;
+          document.getElementById("timelineNext").disabled = timeline.offset + events.length >= total;
+        } catch (e) {
+          body.innerHTML = `<p class="timeline-empty" style="color:var(--bad)">Erro: ${e.message}</p>`;
+        }
+      }
+
+      function openTimeline(leadId, name, email) {
+        timeline.leadId = leadId;
+        timeline.offset = 0;
+        timeline.eventType = document.getElementById("timelineFilter").value;
+
+        const info = [name, email].filter(Boolean).join(" · ") || `Lead #${leadId}`;
+        document.getElementById("timelineTitle").textContent = `Timeline — ${name || `Lead #${leadId}`}`;
+        document.getElementById("timelineLeadInfo").textContent = info;
+
+        const overlay = document.getElementById("timelineOverlay");
+        overlay.classList.add("open");
+        overlay.setAttribute("aria-hidden", "false");
+
+        const params = new URLSearchParams(window.location.search);
+        params.set("lead", String(leadId));
+        history.replaceState(null, "", `${window.location.pathname}?${params}`);
+
+        loadTimeline();
+      }
+
+      function closeTimeline() {
+        const overlay = document.getElementById("timelineOverlay");
+        overlay.classList.remove("open");
+        overlay.setAttribute("aria-hidden", "true");
+        timeline.leadId = null;
+
+        const params = new URLSearchParams(window.location.search);
+        params.delete("lead");
+        const qs = params.toString();
+        history.replaceState(null, "", qs ? `${window.location.pathname}?${qs}` : window.location.pathname);
+      }
+
+      async function openTimelineFromUrl() {
+        const leadId = Number(new URLSearchParams(window.location.search).get("lead"));
+        if (!leadId) return;
+        try {
+          const { data } = await requestJson(`/api/leads/${leadId}/email-events?limit=1`);
+          const lead = data?.lead;
+          openTimeline(leadId, lead?.name || "", lead?.email || "");
+        } catch {
+          openTimeline(leadId, "", "");
+        }
       }
 
       document.getElementById("refreshBtn").addEventListener("click", () => {
@@ -223,7 +430,29 @@
         }
       });
 
-      refreshAll();
+      document.getElementById("timelineClose").addEventListener("click", closeTimeline);
+      document.getElementById("timelineOverlay").addEventListener("click", (e) => {
+        if (e.target.id === "timelineOverlay") closeTimeline();
+      });
+      document.getElementById("timelineFilter").addEventListener("change", () => {
+        timeline.eventType = document.getElementById("timelineFilter").value;
+        timeline.offset = 0;
+        loadTimeline();
+      });
+      document.getElementById("timelineRefresh").addEventListener("click", loadTimeline);
+      document.getElementById("timelinePrev").addEventListener("click", () => {
+        timeline.offset = Math.max(0, timeline.offset - timeline.limit);
+        loadTimeline();
+      });
+      document.getElementById("timelineNext").addEventListener("click", () => {
+        timeline.offset += timeline.limit;
+        loadTimeline();
+      });
+      document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape" && timeline.leadId) closeTimeline();
+      });
+
+      refreshAll().then(openTimelineFromUrl);
     </script>
   </body>
 </html>

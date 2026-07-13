@@ -1,0 +1,521 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Prospecção — Negócios Locais</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./styles.css" />
+    <style>
+      .pros-intro {
+        margin: 0 0 1rem;
+        font-size: 0.88rem;
+        line-height: 1.55;
+        color: var(--muted);
+      }
+      .pros-filters {
+        display: flex;
+        gap: 0.35rem;
+        flex-wrap: wrap;
+        align-items: center;
+        margin-bottom: 1rem;
+      }
+      .pros-tab {
+        font-family: inherit;
+        font-size: 0.78rem;
+        font-weight: 600;
+        padding: 0.4rem 0.8rem;
+        border-radius: 99px;
+        border: 1px solid var(--border);
+        background: rgba(255, 255, 255, 0.65);
+        color: var(--ink);
+        cursor: pointer;
+      }
+      .pros-tab:hover { border-color: var(--accent); color: var(--accent); }
+      .pros-tab.active {
+        background: rgba(15, 122, 106, 0.12);
+        border-color: #0f7a6a;
+        color: #0f7a6a;
+      }
+      .pros-count { margin-left: auto; font-size: 0.78rem; color: var(--muted); }
+
+      .lead-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+        gap: 0.85rem;
+      }
+      .lead-card {
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 0.9rem 1rem;
+        background: var(--card);
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+        border-left: 4px solid var(--border);
+      }
+      .lead-card.tier-quente { border-left-color: #2e8b57; }
+      .lead-card.tier-morno { border-left-color: #f0b429; }
+      .lead-card.tier-frio { border-left-color: rgba(31, 42, 42, 0.25); }
+
+      .lead-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 0.5rem; }
+      .lead-head h4 { margin: 0; font-size: 0.98rem; line-height: 1.25; }
+      .lead-seg { margin: 2px 0 0; font-size: 0.75rem; color: var(--muted); }
+      .score-badge {
+        flex-shrink: 0;
+        font-family: "IBM Plex Mono", monospace;
+        font-weight: 700;
+        font-size: 0.95rem;
+        padding: 0.2rem 0.5rem;
+        border-radius: 8px;
+        background: rgba(15, 122, 106, 0.1);
+        color: #0f7a6a;
+        text-align: center;
+        min-width: 2.4rem;
+      }
+      .score-badge.mid { background: rgba(240, 180, 41, 0.18); color: #8a6d10; }
+      .score-badge.low { background: rgba(31, 42, 42, 0.08); color: var(--muted); }
+
+      .lead-line { margin: 0; font-size: 0.78rem; line-height: 1.4; color: var(--ink); }
+      .lead-line .lbl { color: var(--muted); }
+      .lead-line.op { color: var(--accent); font-weight: 500; }
+      .lead-motivo { margin: 0; font-size: 0.74rem; line-height: 1.45; color: var(--muted); font-style: italic; }
+
+      .lead-actions { display: flex; gap: 0.4rem; flex-wrap: wrap; margin-top: 0.15rem; }
+      .lead-actions a {
+        text-decoration: none;
+        font-size: 0.72rem;
+        font-weight: 600;
+        padding: 0.35rem 0.6rem;
+        border-radius: 8px;
+        border: 1px solid var(--border);
+        color: var(--ink);
+        background: rgba(255, 255, 255, 0.7);
+        display: inline-flex;
+        align-items: center;
+        gap: 0.3rem;
+      }
+      .lead-actions a:hover { border-color: var(--accent); }
+      .lead-actions a.wa { background: rgba(37, 211, 102, 0.14); border-color: rgba(37, 211, 102, 0.4); color: #128c4b; }
+      .lead-actions a.mail { background: rgba(15, 122, 106, 0.1); border-color: rgba(15, 122, 106, 0.35); color: #0f7a6a; }
+      .no-contact { font-size: 0.72rem; color: var(--muted); }
+      .lead-approach {
+        margin-top: 0.1rem;
+        border: 1px dashed var(--border);
+        border-radius: 10px;
+        padding: 0.55rem 0.65rem;
+        background: rgba(15, 122, 106, 0.05);
+      }
+      .approach-label {
+        font-size: 0.64rem;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        font-weight: 700;
+        color: var(--accent);
+        margin: 0 0 0.3rem;
+      }
+      .approach-text { margin: 0; font-size: 0.76rem; line-height: 1.5; color: var(--ink); }
+      .approach-copy {
+        margin-top: 0.45rem;
+        font-size: 0.7rem;
+        font-weight: 600;
+        padding: 0.3rem 0.6rem;
+        border-radius: 8px;
+        border: 1px solid var(--border);
+        background: rgba(255, 255, 255, 0.7);
+        color: var(--ink);
+        cursor: pointer;
+      }
+      .approach-copy:hover { border-color: var(--accent); color: var(--accent); }
+      .flag {
+        font-size: 0.62rem;
+        padding: 2px 7px;
+        border-radius: 99px;
+        font-weight: 700;
+        background: rgba(169, 60, 60, 0.14);
+        color: #a93c3c;
+      }
+      .flag.ok { background: rgba(46, 139, 87, 0.15); color: #2e8b57; }
+      .flag.warn { background: rgba(240, 180, 41, 0.2); color: #8a6d10; }
+    </style>
+  </head>
+  <body>
+    <div class="bg-orb orb-a"></div>
+    <div class="bg-orb orb-b"></div>
+
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">Lead Operations</p>
+        <h1>Prospecção — Negócios Locais</h1>
+      </div>
+      <div class="topbar-nav">
+        <nav class="nav-links" aria-label="Navegação do painel">
+          <a href="/panel/">Scraping</a>
+          <a href="/panel/engagement">Engajamento</a>
+          <a href="/panel/whatsapp">WhatsApp</a>
+          <a href="/panel/email">Email</a>
+          <a href="/panel/contacts">Contatos</a>
+          <a href="/panel/prospeccao" class="active">Prospecção</a>
+          <a href="/panel/ops">Operações</a>
+        </nav>
+        <div class="health" id="healthBadge">API: verificando...</div>
+      </div>
+    </header>
+
+    <main class="layout">
+      <section class="cards">
+        <article class="card">
+          <h2>Negócios mapeados</h2>
+          <p class="metric" id="statTotal">-</p>
+        </article>
+        <article class="card">
+          <h2>Quentes (abordar já)</h2>
+          <p class="metric" id="statQuente" style="color:#2e8b57">-</p>
+        </article>
+        <article class="card">
+          <h2>Mornos (nutrir)</h2>
+          <p class="metric" id="statMorno" style="color:#8a6d10">-</p>
+        </article>
+        <article class="card">
+          <h2>Com WhatsApp/e-mail</h2>
+          <p class="metric" id="statContact">-</p>
+          <p class="card-sub">Prontos para abordagem direta</p>
+        </article>
+      </section>
+
+      <section class="panel">
+        <p class="pros-intro">
+          Mapa de prospecção do eixo <strong>Av. Morumbi (Brooklin / Santo Amaro)</strong> a partir de fotos de fachada.
+          Situação digital e contatos verificados por busca web (jul/2026). O <strong>score</strong> estima a
+          probabilidade do negócio querer/pagar por LP, site institucional, automação ou sistema interno —
+          maior para independentes sem site que vivem de agenda/captação.
+        </p>
+
+        <div class="pros-filters">
+          <button type="button" class="pros-tab active" data-filter="todos">Todos</button>
+          <button type="button" class="pros-tab" data-filter="quente">Quentes</button>
+          <button type="button" class="pros-tab" data-filter="morno">Mornos</button>
+          <button type="button" class="pros-tab" data-filter="frio">Frios</button>
+          <button type="button" class="pros-tab" data-filter="comContato">Só com contato</button>
+          <span class="pros-count" id="prosCount"></span>
+        </div>
+
+        <div class="lead-grid" id="leadGrid"></div>
+      </section>
+    </main>
+
+    <script>
+      // Dados coletados das fotos + verificação web (jul/2026).
+      // Telefones fixos (3xxx/5xxx) entram como "tel"; celulares (9xxxx) viram link WhatsApp.
+      const LEADS = [
+        {
+          nome: "Studio Mix Cabelo & Estética", segmento: "Salão de beleza", tier: "quente", score: 90,
+          abordagem: "Oi! Vi que o Studio Mix abriu recentemente aqui na região, parabéns pela casa nova. Reparei que o agendamento hoje é todo pelo WhatsApp. Eu monto uma página com agenda online (o cliente marca sozinho, 24h) que reduz o vai e vem de mensagem e diminui as faltas. Posso te enviar um exemplo de como ficaria a do salão?",
+          endereco: "nº 309 — Av. Morumbi", site: null,
+          situacao: "Só Instagram/WhatsApp — sem site próprio",
+          oportunidade: "LP + agendamento online + Google Meu Negócio",
+          motivo: "Independente, recém-inaugurado, vive de agenda cheia. Lacuna digital = venda fácil.",
+          whatsapp: "5511975008064", tel: null, email: null,
+          demo: "/panel/demos/studio-mix", demo2: "/panel/demos/studio-mix-2",
+          admin: "/panel/demos/studio-mix-admin"
+        },
+        {
+          nome: "Podologia Especializada / Sano Ser", segmento: "Podologia + Spa", tier: "quente", score: 88,
+          abordagem: "Olá! Passei pela clínica de podologia no Morumbi. Como o atendimento de vocês é por hora marcada, uma página com agendamento e lembrete automático costuma encher a agenda e reduzir faltas. Queria te mostrar um modelo pensado pra podologia e spa, posso enviar?",
+          endereco: "nº 314 — Av. Morumbi", site: null,
+          situacao: "Só telefone/WhatsApp — sem site",
+          oportunidade: "LP + agendamento + captação de recorrência",
+          motivo: "Serviço por hora marcada e recorrente; dois negócios no mesmo ponto (podologia + spa).",
+          whatsapp: "5511966941449", tel: "1150936164", email: null
+        },
+        {
+          nome: "Escola de Boxe Brooklin (StudioDan)", segmento: "Academia / boxe / cross", tier: "quente", score: 85,
+          abordagem: "Fala, Daniel! Acompanhei a Escola de Boxe Brooklin. Pra quem vive de trazer aluno novo e manter mensalista, uma página de captação com aula experimental, além de um controle de matrícula e cobrança, faz diferença direta no caixa. Posso te mostrar como seria pra escola?",
+          endereco: "Av. Morumbi, 8512", site: null,
+          situacao: "Só Instagram + listagens de diretório",
+          oportunidade: "LP de captação + CRM de alunos e cobrança de mensalidade",
+          motivo: "Vive de captar e reter aluno. Automação de matrícula/cobrança tem ROI direto.",
+          whatsapp: "5511971523076", tel: null, email: null
+        },
+        {
+          nome: "ISA — Instituto de Saúde", segmento: "Estúdio fitness / saúde", tier: "quente", score: 82,
+          abordagem: "Oi! Conheci o ISA aqui no Morumbi. Uma página com agendamento de avaliação ajuda a transformar quem passa na frente em cliente e organiza os planos. Posso te mandar um exemplo pensado pro instituto?",
+          endereco: "nº 271 — Fitness · Saúde · Bem-estar", site: null,
+          situacao: "Sem site próprio identificado",
+          oportunidade: "LP + agendamento/gestão de planos e avaliações",
+          motivo: "Estúdio boutique, público que paga. Precisa converter passante em avaliação.",
+          whatsapp: null, tel: null, email: null
+        },
+        {
+          nome: "FHK", segmento: "Restaurante / bar", tier: "quente", score: 80,
+          abordagem: "Olá! Passo sempre pelo FHK e vi o movimento forte de delivery. Hoje boa parte da comissão fica com o aplicativo. Um cardápio digital próprio, com pedido direto e sem taxa de marketplace, costuma se pagar rápido. Posso te mostrar como funcionaria?",
+          endereco: "nº 256 — Av. Morumbi", site: null,
+          situacao: "Nenhuma presença web encontrada",
+          oportunidade: "Site + cardápio digital + reservas/delivery próprio",
+          motivo: "Delivery visível (motoboys). Canal próprio reduz comissão de marketplace.",
+          whatsapp: null, tel: null, email: null
+        },
+        {
+          nome: "Invisalign Doctor (clínica odonto)", segmento: "Odontologia", tier: "quente", score: 80,
+          abordagem: "Olá! Vi a clínica aqui no Morumbi. Em odontologia cada paciente novo vale muito, e uma página focada em captação com agendamento e follow-up automático dos interessados aumenta bastante a conversão de orçamentos. Posso te mostrar um modelo pra clínica?",
+          endereco: "Av. Morumbi (Brooklin)", site: null,
+          situacao: "Usa a marca Invisalign — sem site próprio da clínica",
+          oportunidade: "LP + agendamento + automação de follow-up de leads",
+          motivo: "Ticket altíssimo; cada lead vale muito. Investe em captação e nutrição.",
+          whatsapp: null, tel: null, email: null
+        },
+        {
+          nome: "Jaber", segmento: "Padaria / lanchonete", tier: "morno", score: 65,
+          abordagem: "Oi! Passei pela Jaber. Uma página de pedidos própria e o perfil no Google ajudam a aparecer pra quem busca padaria perto de mim e a vender direto. Posso te mandar um exemplo simples pra começar?",
+          endereco: "Av. Morumbi (Brooklin)", site: null,
+          situacao: "Sem site",
+          oportunidade: "Cardápio/delivery próprio + Google Meu Negócio",
+          motivo: "Sem presença digital, mas ticket baixo e margem apertada.",
+          whatsapp: null, tel: "1150415844", email: null
+        },
+        {
+          nome: "Escola infantil (fachada amarela)", segmento: "Educação infantil", tier: "morno", score: 62,
+          abordagem: "Olá! Vi a escola aqui no Morumbi. Pra educação infantil, um site com informações, fotos e um formulário de matrícula/visita passa mais confiança pros pais e gera contato. Posso te mostrar um modelo?",
+          endereco: "Av. Morumbi (a confirmar)", site: null,
+          situacao: "Provável ausência de site (a confirmar)",
+          oportunidade: "Site institucional + portal de matrículas",
+          motivo: "Escola pequena tende a pagar por credibilidade e matrícula online.",
+          whatsapp: null, tel: null, email: null
+        },
+        {
+          nome: "Nova Morumbi", segmento: "Materiais elétricos/hidráulicos", tier: "morno", score: 60,
+          abordagem: "Oi! Passei pela Nova Morumbi. Além de um catálogo online, dá pra montar um sistema simples de orçamento e controle de estoque que agiliza o balcão e evita erro. Posso te mostrar como ficaria?",
+          endereco: "Av. Morumbi (Brooklin)", site: null,
+          situacao: "Sem site",
+          oportunidade: "Catálogo online + sistema interno de orçamento/estoque",
+          motivo: "Melhor candidato a sistema interno do que a LP; venda mais técnica.",
+          whatsapp: null, tel: null, email: null
+        },
+        {
+          nome: "FITHICAR", segmento: "Auto elétrica e mecânica", tier: "morno", score: 55,
+          abordagem: "Olá! Vi que a FITHICAR já tem site, mas ele está um pouco antigo. Dá pra deixar mais moderno e com agendamento de serviço (revisão, troca de óleo) direto pelo celular. Posso te enviar uma proposta de atualização?",
+          endereco: "Av. Morumbi, 8439", site: "http://www.fithicar.com.br",
+          situacao: "Site básico/antigo",
+          oportunidade: "Refação do site + agendamento de serviço",
+          motivo: "Já valoriza ter site, mas está defasado. Venda de 'upgrade'.",
+          whatsapp: null, tel: "1155421262", email: null
+        },
+        {
+          nome: "TommyGun Barbearia", segmento: "Barbearia (rede local)", tier: "morno", score: 45,
+          abordagem: "Fala! A TommyGun já está bem estruturada com site e agendamento. O próximo passo que costuma reter cliente é um programa de fidelidade com histórico e lembrete de retorno. Posso te mostrar como encaixaria na operação?",
+          endereco: "Av. Morumbi, 8495", site: "https://tommygun.com.br",
+          situacao: "Site próprio + agendamento via Booksy",
+          oportunidade: "App/CRM de fidelidade (upsell)",
+          motivo: "Já resolveu site e agendamento. Só produto avançado agrega.",
+          whatsapp: null, tel: null, email: "contato@tommygun.com.br"
+        },
+        {
+          nome: "Escolinha das Acácias", segmento: "Educação infantil (1969)", tier: "frio", score: 30,
+          abordagem: "Olá! O site de vocês está bem bacana. Uma evolução que os pais gostam é um portal de comunicação e matrícula online. Se fizer sentido, posso mostrar um exemplo.",
+          endereco: "R. Pássaros e Flores, 161/199 — Brooklin", site: "https://www.escolinhadasacacias.com.br",
+          situacao: "Site próprio (Wix)",
+          oportunidade: "Upsell: portal de matrícula/comunicação com pais",
+          motivo: "Já tem site funcional. Só evolução de sistema interno teria valor.",
+          whatsapp: null, tel: null, email: null
+        },
+        {
+          nome: "Tear Pijamas", segmento: "Varejo (pijamas)", tier: "frio", score: 20,
+          abordagem: "Oi! A loja online de vocês já está madura. Posso ajudar com otimização de conversão e automações (carrinho abandonado, pós-venda) pra aumentar a receita da mesma base de clientes. Quer que eu mande algumas ideias?",
+          endereco: "Av. Morumbi, 8518 — Brooklin", site: "https://tearpijamas.com.br",
+          situacao: "E-commerce próprio (Nuvemshop)",
+          oportunidade: "Baixa — só otimização de conversão/automação",
+          motivo: "Loja online madura. Demanda pontual e de nicho.",
+          whatsapp: "5511996608950", tel: null, email: "tearpijamas@tearpijamas.com.br"
+        },
+        {
+          nome: "Barbearia Black Zone", segmento: "Barbearia (franquia)", tier: "frio", score: 15,
+          abordagem: "Oi! Como a Black Zone é rede, o site é da franqueadora, mas se esta unidade tiver autonomia dá pra criar uma página local de captação por bairro e campanhas próprias. Faz sentido conversar?",
+          endereco: "Av. Morumbi (Vila Progredior)", site: "https://www.barbeariablackzone.com",
+          situacao: "Site e agendamento da rede",
+          oportunidade: "Nenhuma — digital gerido pela franqueadora",
+          motivo: "Franquia: decisão de digital é centralizada.",
+          whatsapp: null, tel: null, email: null
+        },
+        {
+          nome: "Dryclean USA", segmento: "Lavanderia (franquia)", tier: "frio", score: 15,
+          abordagem: "Oi! Sei que a Dryclean é franquia com site da rede. Se a unidade tiver margem pra ações locais, dá pra montar captação por bairro e um canal de pedidos/coleta próprio. Quer ver um exemplo?",
+          endereco: "Av. Morumbi (Brooklin)", site: null,
+          situacao: "Site institucional da rede",
+          oportunidade: "Nenhuma — gerido pela franqueadora",
+          motivo: "Franquia internacional com digital padronizado.",
+          whatsapp: "5511988210299", tel: null, email: null
+        },
+        {
+          nome: "Yadea", segmento: "Loja de scooters elétricas (marca)", tier: "frio", score: 12,
+          abordagem: "Oi! A Yadea tem site nacional, mas a loja pode ganhar com uma página local de captação e agendamento de test-ride da região. Faz sentido conversar?",
+          endereco: "nº 4820 — Av. Morumbi", site: null,
+          situacao: "Site da marca (nacional/global)",
+          oportunidade: "Nenhuma — marca já digitalizada",
+          motivo: "Marca grande; presença web resolvida corporativamente.",
+          whatsapp: null, tel: null, email: null
+        },
+        {
+          nome: "Inst. Beatíssima Virgem Maria", segmento: "Colégio (creche→médio)", tier: "frio", score: 20,
+          abordagem: "Olá! Sei que a escola já tem estrutura própria. Se em algum momento precisarem de apoio pontual em site, matrícula online ou automação, fico à disposição.",
+          endereco: "Av. Morumbi, 8652 — Santo Amaro", site: null,
+          situacao: "Presença institucional consolidada",
+          oportunidade: "Baixa — estrutura própria de TI/marketing",
+          motivo: "Instituição grande, provável fornecedor já contratado.",
+          whatsapp: null, tel: "1155428700", email: "secretaria@iebvm.g12.br"
+        }
+      ];
+
+      const TIER_LABEL = { quente: "Quente", morno: "Morno", frio: "Frio" };
+
+      function escapeHtml(str) {
+        return String(str ?? "")
+          .replace(/&/g, "&amp;").replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+      }
+
+      function fmtPhone(digits) {
+        const d = String(digits || "").replace(/\D/g, "");
+        const local = d.startsWith("55") ? d.slice(2) : d;
+        if (local.length === 11) return `(${local.slice(0,2)}) ${local.slice(2,7)}-${local.slice(7)}`;
+        if (local.length === 10) return `(${local.slice(0,2)}) ${local.slice(2,6)}-${local.slice(6)}`;
+        return local;
+      }
+
+      function scoreClass(score) {
+        if (score >= 78) return "";
+        if (score >= 50) return "mid";
+        return "low";
+      }
+
+      function hasContact(lead) {
+        return Boolean(lead.whatsapp || lead.email || lead.tel);
+      }
+
+      function renderActions(lead) {
+        const parts = [];
+        if (lead.whatsapp) {
+          const msg = encodeURIComponent(lead.abordagem || `Olá! Falo com a ${lead.nome}?`);
+          // web.whatsapp.com abre o WhatsApp Web na aba do navegador, em vez de tentar
+          // abrir o app nativo (wa.me/api.whatsapp.com pedem um app instalado no desktop).
+          parts.push(`<a class="wa" target="_blank" rel="noopener" href="https://web.whatsapp.com/send?phone=${lead.whatsapp}&text=${msg}">WhatsApp ${escapeHtml(fmtPhone(lead.whatsapp))}</a>`);
+        }
+        if (lead.tel) {
+          parts.push(`<a href="tel:+55${escapeHtml(lead.tel)}">Tel ${escapeHtml(fmtPhone(lead.tel))}</a>`);
+        }
+        if (lead.email) {
+          parts.push(`<a class="mail" href="mailto:${escapeHtml(lead.email)}">${escapeHtml(lead.email)}</a>`);
+        }
+        if (lead.site) {
+          parts.push(`<a target="_blank" rel="noopener" href="${escapeHtml(lead.site)}">Site</a>`);
+        }
+        if (lead.demo) {
+          parts.push(`<a class="mail" target="_blank" rel="noopener" href="${escapeHtml(lead.demo)}">Ver demo</a>`);
+        }
+        if (lead.demo2) {
+          parts.push(`<a class="mail" target="_blank" rel="noopener" href="${escapeHtml(lead.demo2)}">Ver demo 2</a>`);
+        }
+        if (lead.admin) {
+          parts.push(`<a class="mail" target="_blank" rel="noopener" href="${escapeHtml(lead.admin)}">Painel admin</a>`);
+        }
+        if (!parts.length) {
+          parts.push('<span class="no-contact">Sem contato coletado — pesquisar antes de abordar</span>');
+        }
+        return parts.join("");
+      }
+
+      function siteFlag(lead) {
+        if (lead.site) return '<span class="flag ok">tem site</span>';
+        if (/antigo|básico/i.test(lead.situacao)) return '<span class="flag warn">site antigo</span>';
+        return '<span class="flag">sem site</span>';
+      }
+
+      function renderLead(lead) {
+        return `
+          <article class="lead-card tier-${lead.tier}">
+            <div class="lead-head">
+              <div>
+                <h4>${escapeHtml(lead.nome)}</h4>
+                <p class="lead-seg">${escapeHtml(lead.segmento)} · ${escapeHtml(TIER_LABEL[lead.tier])}</p>
+              </div>
+              <span class="score-badge ${scoreClass(lead.score)}">${lead.score}</span>
+            </div>
+            <p class="lead-line"><span class="lbl">Local:</span> ${escapeHtml(lead.endereco)} ${siteFlag(lead)}</p>
+            <p class="lead-line"><span class="lbl">Situação:</span> ${escapeHtml(lead.situacao)}</p>
+            <p class="lead-line op">→ ${escapeHtml(lead.oportunidade)}</p>
+            <p class="lead-motivo">${escapeHtml(lead.motivo)}</p>
+            <div class="lead-approach">
+              <p class="approach-label">Abordagem sugerida (WhatsApp)</p>
+              <p class="approach-text">${escapeHtml(lead.abordagem)}</p>
+              <button type="button" class="approach-copy">Copiar mensagem</button>
+            </div>
+            <div class="lead-actions">${renderActions(lead)}</div>
+          </article>`;
+      }
+
+      let currentFilter = "todos";
+
+      function applyFilter() {
+        let list = LEADS.slice().sort((a, b) => b.score - a.score);
+        if (currentFilter === "comContato") {
+          list = list.filter(hasContact);
+        } else if (currentFilter !== "todos") {
+          list = list.filter((l) => l.tier === currentFilter);
+        }
+        document.getElementById("leadGrid").innerHTML = list.map(renderLead).join("");
+        document.getElementById("prosCount").textContent = `${list.length} de ${LEADS.length} exibidos · ordenado por score`;
+      }
+
+      function renderStats() {
+        document.getElementById("statTotal").textContent = LEADS.length;
+        document.getElementById("statQuente").textContent = LEADS.filter((l) => l.tier === "quente").length;
+        document.getElementById("statMorno").textContent = LEADS.filter((l) => l.tier === "morno").length;
+        document.getElementById("statContact").textContent = LEADS.filter(hasContact).length;
+      }
+
+      document.querySelectorAll(".pros-tab").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          currentFilter = btn.dataset.filter;
+          document.querySelectorAll(".pros-tab").forEach((b) => b.classList.toggle("active", b === btn));
+          applyFilter();
+        });
+      });
+
+      document.getElementById("leadGrid").addEventListener("click", async (event) => {
+        const btn = event.target.closest(".approach-copy");
+        if (!btn) return;
+        const text = btn.closest(".lead-approach")?.querySelector(".approach-text")?.textContent || "";
+        try {
+          await navigator.clipboard.writeText(text.trim());
+          const prev = btn.textContent;
+          btn.textContent = "Copiado!";
+          setTimeout(() => { btn.textContent = prev; }, 1500);
+        } catch {
+          btn.textContent = "Erro ao copiar";
+        }
+      });
+
+      async function refreshHealth() {
+        const el = document.getElementById("healthBadge");
+        try {
+          const res = await fetch("/health");
+          if (!res.ok) throw new Error();
+          el.textContent = "API: online";
+          el.style.color = "#0f7a6a";
+        } catch {
+          el.textContent = "API: offline";
+          el.style.color = "#a93c3c";
+        }
+      }
+
+      renderStats();
+      applyFilter();
+      refreshHealth();
+      setInterval(refreshHealth, 30000);
+    </script>
+  </body>
+</html>

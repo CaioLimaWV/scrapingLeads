@@ -1,5 +1,6 @@
 const db = require("../database/knex");
 const { slugifyUtm } = require("../utils/emailUtm");
+const { applyHigherPriorityExclusion } = require("../services/email/campaignExclusive");
 
 function parseJsonArray(value) {
   if (!value) return [];
@@ -84,7 +85,15 @@ function applySegmentFilters(query, { sourceIds, fieldAreas }) {
   return query;
 }
 
-function baseEligibleQuery({ sourceIds, fieldAreas, campaignId, minDaysSinceEmail, requirePriorEmail }) {
+async function baseEligibleQuery({
+  sourceIds,
+  fieldAreas,
+  campaignId,
+  minDaysSinceEmail,
+  requirePriorEmail,
+  campaign = null,
+  activeCampaigns = []
+}) {
   let query = db("leads")
     .where("leads.is_valid", true)
     .where("leads.is_active", true)
@@ -93,6 +102,10 @@ function baseEligibleQuery({ sourceIds, fieldAreas, campaignId, minDaysSinceEmai
     .whereRaw("leads.email_normalized NOT LIKE ?", ["%@lead.local"]);
 
   query = applySegmentFilters(query, { sourceIds, fieldAreas });
+
+  if (campaign && activeCampaigns.length) {
+    applyHigherPriorityExclusion(query, campaign, activeCampaigns);
+  }
 
   if (campaignId) {
     query.whereNotExists(function () {
@@ -127,12 +140,17 @@ async function countEligibleForCampaign(campaign) {
     return countEligibleLeadSteps(campaign);
   }
 
+  const { getActiveCampaignsOrdered } = require("../services/email/campaignExclusive");
+  const activeCampaigns = await getActiveCampaignsOrdered();
+
   const row = await baseEligibleQuery({
     sourceIds: campaign.source_ids,
     fieldAreas: campaign.field_areas,
     campaignId: campaign.id,
     minDaysSinceEmail: campaign.min_days_since_email,
-    requirePriorEmail: campaign.require_prior_email
+    requirePriorEmail: campaign.require_prior_email,
+    campaign,
+    activeCampaigns
   })
     .count("leads.id as count")
     .first();

@@ -50,6 +50,58 @@ async function listExecutions(limit = 50, offset = 0) {
     .offset(offset);
 }
 
+async function countRunningExecutions() {
+  const row = await db("scraping_executions")
+    .where({ status: "running" })
+    .count({ total: "id" })
+    .first();
+  return Number(row?.total || 0);
+}
+
+async function updateExecutionProgress(executionId, counters) {
+  await db("scraping_executions").where({ id: executionId }).update({
+    total_scraped: counters.scraped || 0,
+    total_saved: counters.saved || 0,
+    duplicates_found: counters.duplicates || 0,
+    errors_count: counters.errors || 0,
+    updated_at: db.fn.now()
+  });
+}
+
+async function recoverInterruptedExecutions() {
+  const updated = await db("scraping_executions")
+    .where({ status: "running" })
+    .update({
+      status: "failed",
+      errors_count: db.raw("errors_count + 1"),
+      finished_at: db.fn.now(),
+      updated_at: db.fn.now(),
+      error_log: JSON.stringify([{
+        code: "INTERRUPTED",
+        message: "Execution interrupted before completion (server restart or crash)"
+      }])
+    });
+  return updated;
+}
+
+async function cleanupStaleExecutions(staleMinutes = 120) {
+  const minutes = Math.max(1, Number(staleMinutes) || 120);
+  const updated = await db("scraping_executions")
+    .where({ status: "running" })
+    .whereRaw("TIMESTAMPDIFF(MINUTE, started_at, NOW()) >= ?", [minutes])
+    .update({
+      status: "failed",
+      errors_count: db.raw("errors_count + 1"),
+      finished_at: db.fn.now(),
+      updated_at: db.fn.now(),
+      error_log: JSON.stringify([{
+        code: "STALE_TIMEOUT",
+        message: `Execution exceeded ${minutes} minutes without completion`
+      }])
+    });
+  return updated;
+}
+
 async function getExecutionStats() {
   const totals = await db("scraping_executions")
     .select("status")
@@ -85,5 +137,9 @@ module.exports = {
   finishExecution,
   logScrapingError,
   listExecutions,
-  getExecutionStats
+  getExecutionStats,
+  countRunningExecutions,
+  updateExecutionProgress,
+  cleanupStaleExecutions,
+  recoverInterruptedExecutions
 };

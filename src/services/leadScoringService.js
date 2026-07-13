@@ -14,15 +14,15 @@ function classifyClickUrl(url) {
   return "generic";
 }
 
-function deriveTemperature(score, emailUnsubscribed) {
-  if (emailUnsubscribed) return "lost";
+function deriveTemperature(score, emailUnsubscribed, isActive = true) {
+  if (!isActive || emailUnsubscribed) return "lost";
   if (score >= 5) return "hot";
   if (score >= 1) return "warm";
   return "cold";
 }
 
-function deriveFunnelStage({ score, emailUnsubscribed, emailsSent, hasWhatsappClick, hasScheduleClick, contacted }) {
-  if (emailUnsubscribed) return "lost";
+function deriveFunnelStage({ score, emailUnsubscribed, isActive = true, emailsSent, hasWhatsappClick, hasScheduleClick, contacted }) {
+  if (!isActive || emailUnsubscribed) return "lost";
   if (hasScheduleClick || contacted || (score >= 8) || (score >= 5 && hasWhatsappClick)) {
     return "bottom";
   }
@@ -30,8 +30,10 @@ function deriveFunnelStage({ score, emailUnsubscribed, emailsSent, hasWhatsappCl
   return "top";
 }
 
-function deriveNextAction({ temperature, funnelStage, emailUnsubscribed, emailsSent, opens, clicks, contacted, deepCold }) {
-  if (emailUnsubscribed) return "Fora do funil — descadastrado";
+function deriveNextAction({ temperature, funnelStage, emailUnsubscribed, isActive = true, whatsappOptOut = false, emailsSent, opens, clicks, contacted, deepCold }) {
+  if (!isActive) return "Contato inativado — nao abordar";
+  if (emailUnsubscribed) return "Fora do funil — descadastrado de email";
+  if (whatsappOptOut) return "WhatsApp bloqueado — nao contatar por telefone";
   if (deepCold) return "Pausar campanha — 3+ emails sem interação";
   if (temperature === "hot" && funnelStage === "bottom") return "WhatsApp urgente — lead pronto";
   if (temperature === "hot") return "WhatsApp prioritário hoje";
@@ -45,7 +47,7 @@ function deriveNextAction({ temperature, funnelStage, emailUnsubscribed, emailsS
 }
 
 function computeScore(signals) {
-  if (signals.emailUnsubscribed) return -100;
+  if (!signals.isActive || signals.emailUnsubscribed) return -100;
 
   let score = 0;
   const opensBySend = signals.opensBySend || {};
@@ -87,7 +89,7 @@ function computeScore(signals) {
 
 async function fetchLeadSignals(leadId) {
   const lead = await db("leads")
-    .select("id", "email_unsubscribed", "contacted", "contacted_at")
+    .select("id", "email_unsubscribed", "whatsapp_opt_out", "is_active", "contacted", "contacted_at")
     .where({ id: leadId })
     .first();
 
@@ -133,6 +135,8 @@ async function fetchLeadSignals(leadId) {
   return {
     leadId,
     emailUnsubscribed: !!lead.email_unsubscribed,
+    whatsappOptOut: !!lead.whatsapp_opt_out,
+    isActive: !!lead.is_active,
     contacted: !!lead.contacted,
     emailsSent: sends.length,
     opensBySend,
@@ -148,10 +152,11 @@ async function fetchLeadSignals(leadId) {
 
 function buildEngagementFromSignals(signals) {
   const score = computeScore(signals);
-  const temperature = deriveTemperature(score, signals.emailUnsubscribed);
+  const temperature = deriveTemperature(score, signals.emailUnsubscribed, signals.isActive);
   const funnelStage = deriveFunnelStage({
     score,
     emailUnsubscribed: signals.emailUnsubscribed,
+    isActive: signals.isActive,
     emailsSent: signals.emailsSent,
     hasWhatsappClick: signals.hasWhatsappClick,
     hasScheduleClick: signals.hasScheduleClick,
@@ -161,6 +166,8 @@ function buildEngagementFromSignals(signals) {
     temperature,
     funnelStage,
     emailUnsubscribed: signals.emailUnsubscribed,
+    isActive: signals.isActive,
+    whatsappOptOut: signals.whatsappOptOut,
     emailsSent: signals.emailsSent,
     opens: signals.totalOpens,
     clicks: signals.totalClicks,

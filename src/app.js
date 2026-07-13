@@ -11,6 +11,8 @@ const dashboardRoutes = require("./routes/dashboardRoutes");
 const scrapeRoutes = require("./routes/scrapeRoutes");
 const emailRoutes = require("./routes/emailRoutes");
 const trackingRoutes = require("./routes/trackingRoutes");
+const contactsRoutes = require("./routes/contactsRoutes");
+const opsRoutes = require("./routes/opsRoutes");
 
 function createApp() {
   const app = express();
@@ -41,7 +43,13 @@ function createApp() {
   app.use("/api/dashboard", dashboardRoutes);
   app.use("/api/scrape", scrapeRoutes);
   app.use("/api/email", emailRoutes);
+  app.use("/api/contacts", contactsRoutes);
+  app.use("/api/ops", opsRoutes);
   app.use("/track", trackingRoutes);
+
+  app.get("/panel/engajamento", (req, res) => {
+    res.redirect(301, "/panel/engagement");
+  });
 
   app.use("/panel", express.static(path.join(__dirname, "public"), { extensions: ["html"] }));
 
@@ -60,6 +68,11 @@ function createApp() {
 const app = createApp();
 
 if (require.main === module) {
+  const { initializeScrapeMaintenance } = require("./services/scrapeService");
+  initializeScrapeMaintenance().catch((error) => {
+    logger.error({ err: error }, "Failed to initialize scrape maintenance");
+  });
+
   app.listen(env.appPort, () => {
     logger.info({ port: env.appPort }, "Server started");
   });

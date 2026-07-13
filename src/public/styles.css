@@ -54,6 +54,34 @@ body {
     padding: 28px 28px 8px;
 }
 
+.topbar-nav {
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.nav-links {
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+}
+
+.nav-links a {
+    color: var(--muted);
+    font-size: 0.85rem;
+    text-decoration: none;
+}
+
+.nav-links a:hover {
+    color: var(--accent);
+}
+
+.nav-links a.active {
+    color: var(--ink);
+    font-weight: 600;
+}
+
 .eyebrow {
     margin: 0;
     font-size: 12px;
@@ -113,6 +141,13 @@ h1 {
     font-family: "IBM Plex Mono", monospace;
     font-size: 30px;
     font-weight: 600;
+}
+
+.card-sub {
+    margin: 6px 0 0;
+    font-size: 12px;
+    line-height: 1.45;
+    color: var(--muted);
 }
 
 .panel {

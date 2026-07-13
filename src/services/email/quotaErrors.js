@@ -26,6 +26,18 @@ function isRateLimitError(err) {
   return status === 429 && (msg.includes("ms42903") || msg.includes("rate limit"));
 }
 
+function isAuthError(err) {
+  const msg = getErrorMessage(err);
+  const status = getErrorResponse(err)?.status;
+  return (
+    status === 401 ||
+    status === 403 ||
+    msg.includes("unauthorized") ||
+    msg.includes("forbidden") ||
+    msg.includes("invalid scope")
+  );
+}
+
 function isQuotaError(err) {
   const msg = getErrorMessage(err);
   return (
@@ -56,6 +68,7 @@ module.exports = {
   getErrorMessage,
   isDailyQuotaError,
   isRateLimitError,
+  isAuthError,
   isQuotaError,
   parseResetHeader,
   parseRetryAfterSeconds

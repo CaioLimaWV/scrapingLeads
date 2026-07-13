@@ -7,13 +7,20 @@ const { getActiveSources } = require("../repositories/sourceRepository");
 const {
   createExecution,
   finishExecution,
-  logScrapingError
+  logScrapingError,
+  cleanupStaleExecutions,
+  countRunningExecutions,
+  updateExecutionProgress,
+  recoverInterruptedExecutions
 } = require("../repositories/executionRepository");
 const {
   findLeadByEmailAndSource,
   insertLead
 } = require("../repositories/leadRepository");
 const { scrapeSource } = require("../scrapers");
+
+const STALE_EXECUTION_MINUTES = 120;
+let activeScrapePromise = null;
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -86,18 +93,37 @@ async function processSource(source) {
     duplicates: 0,
     errors: 0
   };
+  let lastProgressAt = 0;
+
+  async function reportProgress(force = false) {
+    const now = Date.now();
+    if (!force && now - lastProgressAt < 3000) {
+      return;
+    }
+    lastProgressAt = now;
+    await updateExecutionProgress(execution.id, counters);
+  }
 
   try {
     const rawLeads = await runWithRetry(
-      () => scrapeSource(source, env.scrape, logger),
+      () => scrapeSource(source, env.scrape, logger, {
+        onProgress: async (partial) => {
+          if (partial?.scraped !== undefined) {
+            counters.scraped = partial.scraped;
+          }
+          await reportProgress();
+        }
+      }),
       { retries: env.scrape.retryMax, baseDelayMs: env.scrape.retryBaseDelayMs }
     );
 
     counters.scraped = rawLeads.length;
+    await reportProgress(true);
 
     for (const rawLead of rawLeads) {
       // Process sequentially to keep transaction and logs deterministic.
       await processLead(execution.id, source.id, rawLead, counters);
+      await reportProgress();
     }
 
     await finishExecution(execution.id, {
@@ -139,18 +165,6 @@ async function processSource(source) {
 }
 
 async function runScraping({ sourceId } = {}) {
-  // Cleanup defensivo: se um processo foi interrompido (ex.: Ctrl+C), evita execucoes eternamente em running.
-  await db("scraping_executions")
-    .where({ status: "running" })
-    .whereRaw("TIMESTAMPDIFF(MINUTE, started_at, NOW()) >= 2")
-    .update({
-      status: "failed",
-      errors_count: db.raw("errors_count + 1"),
-      finished_at: db.fn.now(),
-      updated_at: db.fn.now(),
-      error_log: JSON.stringify([{ code: "INTERRUPTED", message: "Execution interrupted before completion" }])
-    });
-
   const sources = await getActiveSources();
   const selectedSources = sourceId
     ? sources.filter((source) => source.id === Number(sourceId))
@@ -182,6 +196,60 @@ async function runScraping({ sourceId } = {}) {
   };
 }
 
+function isScrapingActive() {
+  return activeScrapePromise !== null;
+}
+
+async function startScraping(options = {}) {
+  if (activeScrapePromise) {
+    return { started: false, alreadyRunning: true };
+  }
+
+  const runningInDb = await countRunningExecutions();
+  if (runningInDb > 0) {
+    return { started: false, alreadyRunning: true, runningExecutions: runningInDb };
+  }
+
+  activeScrapePromise = runScraping(options)
+    .catch((error) => {
+      logger.error({ err: error }, "Background scraping failed");
+      return { processedSources: 0, totals: { scraped: 0, saved: 0, duplicates: 0, errors: 1 }, failed: true };
+    })
+    .finally(() => {
+      activeScrapePromise = null;
+    });
+
+  return { started: true, alreadyRunning: false };
+}
+
+async function initializeScrapeMaintenance() {
+  const recovered = await recoverInterruptedExecutions();
+  if (recovered > 0) {
+    logger.warn({ recovered }, "Recovered interrupted scraping executions after startup");
+  }
+
+  const cleaned = await cleanupStaleExecutions(STALE_EXECUTION_MINUTES);
+  if (cleaned > 0) {
+    logger.warn({ cleaned, staleMinutes: STALE_EXECUTION_MINUTES }, "Marked stale scraping executions as failed");
+  }
+
+  setInterval(() => {
+    cleanupStaleExecutions(STALE_EXECUTION_MINUTES)
+      .then((count) => {
+        if (count > 0) {
+          logger.warn({ cleaned: count, staleMinutes: STALE_EXECUTION_MINUTES }, "Marked stale scraping executions as failed");
+        }
+      })
+      .catch((error) => {
+        logger.error({ err: error }, "Failed to cleanup stale scraping executions");
+      });
+  }, 5 * 60 * 1000).unref();
+}
+
 module.exports = {
-  runScraping
+  runScraping,
+  startScraping,
+  isScrapingActive,
+  initializeScrapeMaintenance,
+  cleanupStaleExecutions
 };

@@ -1,0 +1,606 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Gestao de Contatos</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./styles.css" />
+    <style>
+      .contacts-grid { display: grid; gap: 1rem; }
+      @media (min-width: 960px) { .contacts-grid { grid-template-columns: 1fr 1fr; } }
+      .scope-options { display: grid; gap: 0.45rem; margin: 0.75rem 0; }
+      .scope-options label { display: flex; gap: 0.5rem; align-items: flex-start; cursor: pointer; font-size: 0.85rem; }
+      .scope-options small { display: block; color: var(--muted); font-size: 0.75rem; margin-top: 2px; }
+      .search-results { margin-top: 0.75rem; display: grid; gap: 0.5rem; max-height: 280px; overflow: auto; }
+      .search-item { border: 1px solid var(--border); border-radius: 8px; padding: 0.65rem 0.75rem; background: rgba(255,255,255,0.45); cursor: pointer; display: flex; gap: 0.65rem; align-items: flex-start; }
+      .search-item.selected { border-color: var(--accent); background: rgba(15,122,106,0.08); }
+      .search-item input[type="checkbox"] { margin-top: 0.15rem; flex-shrink: 0; cursor: pointer; }
+      .search-item-body { flex: 1; min-width: 0; }
+      .search-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; margin-top: 0.5rem; font-size: 0.78rem; color: var(--muted); }
+      .search-toolbar button { font-size: 0.75rem; padding: 0.25rem 0.55rem; }
+      .search-item h4 { margin: 0 0 0.25rem; font-size: 0.92rem; }
+      .search-item p { margin: 0; font-size: 0.78rem; color: var(--muted); font-family: "IBM Plex Mono", monospace; }
+      .flag-row { display: flex; gap: 0.35rem; flex-wrap: wrap; margin-top: 0.35rem; }
+      .flag { font-size: 0.65rem; padding: 2px 7px; border-radius: 99px; font-weight: 700; }
+      .flag.bad { background: rgba(169,60,60,0.15); color: #a93c3c; }
+      .flag.ok { background: rgba(46,139,87,0.15); color: #2e8b57; }
+      .flag.info { background: rgba(15,122,106,0.12); color: #0f7a6a; }
+      .info-banner { margin: 0.5rem 0 0.75rem; padding: 0.65rem 0.75rem; border-radius: 8px; background: rgba(15,122,106,0.08); border: 1px solid rgba(15,122,106,0.25); color: var(--ink); font-size: 0.8rem; line-height: 1.45; }
+      .status-box { min-height: 1.2rem; font-size: 0.82rem; margin-top: 0.5rem; }
+      .csv-hint { font-size: 0.75rem; color: var(--muted); line-height: 1.45; margin: 0.5rem 0 0.75rem; }
+      .csv-hint code { font-size: 0.72rem; }
+      .table-wrap { overflow: auto; }
+      table.compact td, table.compact th { font-size: 0.78rem; padding: 0.45rem 0.55rem; }
+    </style>
+  </head>
+  <body>
+    <div class="bg-orb orb-a"></div>
+    <div class="bg-orb orb-b"></div>
+
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">Lead Operations</p>
+        <h1>Gestao de Contatos</h1>
+      </div>
+      <nav class="nav-links" aria-label="Navegacao do painel">
+        <a href="/panel/">Scraping</a>
+        <a href="/panel/engagement">Engajamento</a>
+        <a href="/panel/whatsapp">WhatsApp</a>
+        <a href="/panel/email">Email</a>
+        <a href="/panel/contacts" class="active">Contatos</a>
+        <a href="/panel/prospeccao">Prospecção</a>
+        <a href="/panel/ops">Operações</a>
+      </nav>
+    </header>
+
+    <main class="layout contacts-grid">
+      <section class="panel">
+        <h3>Inativar contato</h3>
+        <p style="margin:0 0 12px;color:var(--muted);font-size:0.88rem">
+          Para respostas negativas, pedidos de descadastro manual ou redirecionamento para outro email.
+        </p>
+
+        <label>
+          Buscar por nome, email ou telefone
+          <input id="searchInput" type="text" placeholder="ex: ouvidoria@wevets.com.br" />
+        </label>
+        <p style="margin:0.35rem 0 0;font-size:0.75rem;color:var(--muted)">
+          Clique nos resultados para selecionar um ou mais contatos. Use "Selecionar todos" quando o mesmo email aparecer em varias unidades.
+        </p>
+        <div id="searchResults" class="search-results"></div>
+        <div id="searchToolbar" class="search-toolbar" style="display:none">
+          <span id="selectionLabel">0 selecionado(s)</span>
+          <button id="selectAllBtn" type="button" class="ghost">Selecionar todos</button>
+        </div>
+
+        <div id="selectionInfo" class="info-banner" style="display:none"></div>
+
+        <label style="margin-top:0.75rem">
+          Email (se nao selecionar da busca)
+          <input id="emailInput" type="email" placeholder="contato@empresa.com" />
+        </label>
+        <label>
+          Telefone (opcional)
+          <input id="phoneInput" type="text" placeholder="11999999999" />
+        </label>
+
+        <fieldset class="scope-options">
+          <legend style="font-size:0.85rem;font-weight:600">Canal a bloquear</legend>
+          <label>
+            <input type="radio" name="scope" value="email" checked />
+            <span>Somente email<small>Para de receber campanhas. WhatsApp continua elegivel.</small></span>
+          </label>
+          <label>
+            <input type="radio" name="scope" value="whatsapp" />
+            <span>Somente WhatsApp<small>Sai da fila de WhatsApp. Email continua elegivel.</small></span>
+          </label>
+          <label>
+            <input type="radio" name="scope" value="all" />
+            <span>Email + telefone (total)<small>Bloqueia todos os canais. Recomendado para negativa explicita.</small></span>
+          </label>
+        </fieldset>
+
+        <label>
+          Email alternativo (se pediram redirecionamento)
+          <input id="alternateEmailInput" type="email" placeholder="contato@wevets.com.br" />
+        </label>
+        <label>
+          Observacao / motivo
+          <textarea id="reasonInput" rows="3" placeholder="Ex: Pediu para usar contato@wevets.com.br — ouvidoria nao atende comercial"></textarea>
+        </label>
+        <label>
+          Token (opcional)
+          <input id="tokenInput" type="password" placeholder="x-panel-token" />
+        </label>
+
+        <div class="run-actions" style="margin-top:0.75rem">
+          <button id="suppressBtn" type="button">Inativar contato</button>
+        </div>
+        <div id="suppressStatus" class="status-box"></div>
+      </section>
+
+      <section class="panel">
+        <h3>Importar via CSV</h3>
+        <p style="margin:0 0 12px;color:var(--muted);font-size:0.88rem">
+          Envie uma planilha para inativar em lote ou cadastrar novos leads.
+        </p>
+
+        <label>
+          Modo de importacao
+          <select id="importMode">
+            <option value="suppress">Inativar contatos (CSV)</option>
+            <option value="leads">Cadastrar novos leads (CSV)</option>
+          </select>
+        </label>
+
+        <label id="sourceWrap" style="display:none">
+          Fonte para novos leads
+          <select id="sourceSelect"></select>
+        </label>
+
+        <label>
+          Arquivo CSV
+          <input id="csvFile" type="file" accept=".csv,text/csv" />
+        </label>
+
+        <div class="csv-hint" id="csvHint">
+          Colunas para <strong>inativar</strong>:
+          <code>email, phone, scope, reason, alternate_email</code><br />
+          Exemplo: <code>ouvidoria@wevets.com.br,,email,"Pediu contato@wevets.com.br",contato@wevets.com.br</code>
+        </div>
+
+        <div class="run-actions">
+          <button id="importBtn" type="button" class="ghost">Importar CSV</button>
+        </div>
+        <div id="importStatus" class="status-box"></div>
+      </section>
+
+      <section class="panel" style="grid-column:1/-1">
+        <div class="panel-head">
+          <div>
+            <h3>Contatos inativados recentemente</h3>
+            <p style="margin:0;color:var(--muted);font-size:0.85rem">Email bloqueado, WhatsApp bloqueado ou inativacao total.</p>
+          </div>
+          <button id="refreshBtn" type="button" class="ghost">Atualizar</button>
+        </div>
+        <div class="table-wrap">
+          <table class="compact">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Nome</th>
+                <th>Email</th>
+                <th>Telefone</th>
+                <th>Status</th>
+                <th>Alternativo</th>
+                <th>Observacao</th>
+                <th>Desde</th>
+              </tr>
+            </thead>
+            <tbody id="suppressedBody"></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+
+    <script>
+      const state = { selectedLeadIds: new Set(), searchResults: [], sources: [] };
+
+      function escapeHtml(str) {
+        return String(str ?? "")
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;");
+      }
+
+      function getToken() {
+        return document.getElementById("tokenInput").value.trim();
+      }
+
+      function getScope() {
+        const selected = document.querySelector('input[name="scope"]:checked');
+        return selected ? selected.value : "all";
+      }
+
+      function setStatus(el, message, ok) {
+        el.textContent = message;
+        el.style.color = ok ? "#2e8b57" : ok === false ? "#a93c3c" : "var(--muted)";
+      }
+
+      async function requestJson(url, options = {}) {
+        const response = await fetch(url, options);
+        const body = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(body.message || `Erro ${response.status}`);
+        }
+        return body;
+      }
+
+      function updateSelectionUi() {
+        const toolbar = document.getElementById("searchToolbar");
+        const count = state.selectedLeadIds.size;
+        document.getElementById("selectionLabel").textContent = `${count} selecionado(s)`;
+        toolbar.style.display = state.searchResults.length > 0 ? "flex" : "none";
+
+        if (count === 1) {
+          const lead = state.searchResults.find((row) => state.selectedLeadIds.has(row.id));
+          if (lead) {
+            document.getElementById("emailInput").value = lead.email || "";
+            document.getElementById("phoneInput").value = lead.phone || "";
+          }
+        } else if (count > 1) {
+          const emails = [...new Set(
+            state.searchResults
+              .filter((row) => state.selectedLeadIds.has(row.id))
+              .map((row) => row.email)
+              .filter(Boolean)
+          )];
+          document.getElementById("emailInput").value = emails.length === 1 ? emails[0] : "";
+          document.getElementById("phoneInput").value = "";
+        }
+
+        updateSelectionInfo();
+      }
+
+      function toggleLeadSelection(leadId) {
+        if (state.selectedLeadIds.has(leadId)) {
+          state.selectedLeadIds.delete(leadId);
+        } else {
+          state.selectedLeadIds.add(leadId);
+        }
+        renderSearchResults(state.searchResults);
+        updateSelectionUi();
+      }
+
+      function selectAllResults() {
+        for (const lead of state.searchResults) {
+          state.selectedLeadIds.add(lead.id);
+        }
+        renderSearchResults(state.searchResults);
+        updateSelectionUi();
+      }
+
+      function renderFlags(lead) {
+        const flags = [];
+        if (!lead.is_active) flags.push('<span class="flag info">Inativo total</span>');
+        if (lead.email_unsubscribed) flags.push('<span class="flag info">Email inativo</span>');
+        if (lead.whatsapp_opt_out) flags.push('<span class="flag info">WA inativo</span>');
+        if (flags.length === 0) flags.push('<span class="flag ok">Ativo</span>');
+        return flags.join("");
+      }
+
+      function selectedLeads() {
+        return state.searchResults.filter((row) => state.selectedLeadIds.has(row.id));
+      }
+
+      function updateSelectionInfo() {
+        const banner = document.getElementById("selectionInfo");
+        const selected = selectedLeads();
+        const scope = getScope();
+
+        if (selected.length === 0) {
+          banner.style.display = "none";
+          banner.textContent = "";
+          return;
+        }
+
+        const alreadyBlocked = selected.filter((lead) => {
+          if (scope === "email") return lead.email_unsubscribed;
+          if (scope === "whatsapp") return lead.whatsapp_opt_out;
+          return !lead.is_active || (lead.email_unsubscribed && lead.whatsapp_opt_out);
+        });
+
+        if (alreadyBlocked.length === selected.length) {
+          banner.style.display = "block";
+          banner.textContent = "Esses contatos ja estao inativos para o canal escolhido. Clique em \"Inativar contato\" para salvar a observacao e o email alternativo.";
+        } else if (alreadyBlocked.length > 0) {
+          banner.style.display = "block";
+          banner.textContent = `${alreadyBlocked.length} de ${selected.length} ja estao inativos. O botao abaixo atualiza todos e salva a observacao.`;
+        } else {
+          banner.style.display = "block";
+          banner.textContent = "Revise os dados e clique em \"Inativar contato\" para confirmar.";
+        }
+      }
+
+      function renderSearchResults(rows) {
+        state.searchResults = rows;
+        const container = document.getElementById("searchResults");
+        container.textContent = "";
+
+        if (!rows.length) {
+          container.innerHTML = '<p style="margin:0;color:var(--muted);font-size:0.82rem">Nenhum lead encontrado.</p>';
+          updateSelectionUi();
+          return;
+        }
+
+        for (const lead of rows) {
+          const selected = state.selectedLeadIds.has(lead.id);
+          const item = document.createElement("div");
+          item.className = `search-item${selected ? " selected" : ""}`;
+          item.innerHTML = `
+            <input type="checkbox" ${selected ? "checked" : ""} aria-label="Selecionar ${escapeHtml(lead.name || "lead")}" />
+            <div class="search-item-body">
+              <h4>${escapeHtml(lead.name || "Sem nome")}</h4>
+              <p>${escapeHtml(lead.email || "-")} · ${escapeHtml(lead.phone || "sem telefone")}</p>
+              <div class="flag-row">${renderFlags(lead)}</div>
+            </div>`;
+
+          const checkbox = item.querySelector('input[type="checkbox"]');
+          checkbox.addEventListener("click", (event) => {
+            event.stopPropagation();
+            toggleLeadSelection(lead.id);
+          });
+
+          item.addEventListener("click", () => {
+            toggleLeadSelection(lead.id);
+          });
+
+          container.appendChild(item);
+        }
+
+        updateSelectionUi();
+      }
+
+      async function searchLeads() {
+        const q = document.getElementById("searchInput").value.trim();
+        if (q.length < 2) {
+          state.searchResults = [];
+          state.selectedLeadIds.clear();
+          document.getElementById("searchResults").textContent = "";
+          updateSelectionUi();
+          return;
+        }
+
+        try {
+          const payload = await requestJson(`/api/contacts/search?q=${encodeURIComponent(q)}&limit=50`);
+          const rows = payload.data || [];
+          const resultIds = new Set(rows.map((row) => row.id));
+          for (const id of [...state.selectedLeadIds]) {
+            if (!resultIds.has(id)) {
+              state.selectedLeadIds.delete(id);
+            }
+          }
+          renderSearchResults(rows);
+        } catch (error) {
+          document.getElementById("searchResults").innerHTML =
+            `<p style="margin:0;color:#a93c3c;font-size:0.82rem">${escapeHtml(error.message)}</p>`;
+          updateSelectionUi();
+        }
+      }
+
+      async function suppressContact() {
+        const statusEl = document.getElementById("suppressStatus");
+        const btn = document.getElementById("suppressBtn");
+        const leadIds = [...state.selectedLeadIds];
+        const email = document.getElementById("emailInput").value.trim();
+        const phone = document.getElementById("phoneInput").value.trim();
+
+        if (leadIds.length === 0 && !email && !phone) {
+          setStatus(statusEl, "Selecione um ou mais contatos na busca, ou informe email/telefone.", false);
+          return;
+        }
+
+        btn.disabled = true;
+        setStatus(statusEl, "Processando...", null);
+
+        try {
+          const payload = await requestJson("/api/contacts/suppress", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              ...(getToken() ? { "x-panel-token": getToken() } : {})
+            },
+            body: JSON.stringify({
+              leadIds,
+              email: email || undefined,
+              phone: phone || undefined,
+              scope: getScope(),
+              alternateEmail: document.getElementById("alternateEmailInput").value.trim(),
+              reason: document.getElementById("reasonInput").value.trim()
+            })
+          });
+
+          const matched = payload.data?.matched || 0;
+          setStatus(statusEl, `Salvo com sucesso (${matched} registro(s) atualizado(s)).`, true);
+          state.selectedLeadIds.clear();
+          document.getElementById("searchInput").value = "";
+          state.searchResults = [];
+          document.getElementById("searchResults").textContent = "";
+          updateSelectionUi();
+          await loadSuppressed();
+        } catch (error) {
+          setStatus(statusEl, error.message, false);
+        } finally {
+          btn.disabled = false;
+        }
+      }
+
+      function parseCsv(text) {
+        const lines = String(text || "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+        if (!lines.length) return [];
+
+        const splitLine = (line) => {
+          const cells = [];
+          let current = "";
+          let inQuotes = false;
+          for (let i = 0; i < line.length; i += 1) {
+            const char = line[i];
+            if (char === "\"") {
+              inQuotes = !inQuotes;
+              continue;
+            }
+            if (char === "," && !inQuotes) {
+              cells.push(current.trim());
+              current = "";
+              continue;
+            }
+            current += char;
+          }
+          cells.push(current.trim());
+          return cells;
+        };
+
+        const headers = splitLine(lines[0]).map((header) => header.toLowerCase());
+        return lines.slice(1).map((line) => {
+          const values = splitLine(line);
+          const row = {};
+          headers.forEach((header, index) => {
+            row[header] = values[index] || "";
+          });
+          return row;
+        });
+      }
+
+      async function importCsv() {
+        const statusEl = document.getElementById("importStatus");
+        const btn = document.getElementById("importBtn");
+        const fileInput = document.getElementById("csvFile");
+        const mode = document.getElementById("importMode").value;
+
+        if (!fileInput.files?.[0]) {
+          setStatus(statusEl, "Selecione um arquivo CSV.", false);
+          return;
+        }
+
+        btn.disabled = true;
+        setStatus(statusEl, "Importando...", null);
+
+        try {
+          const text = await fileInput.files[0].text();
+          const rows = parseCsv(text);
+          const body = {
+            mode,
+            rows,
+            sourceId: mode === "leads" ? Number(document.getElementById("sourceSelect").value) : null
+          };
+
+          const payload = await requestJson("/api/contacts/import", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              ...(getToken() ? { "x-panel-token": getToken() } : {})
+            },
+            body: JSON.stringify(body)
+          });
+
+          const data = payload.data || {};
+          if (mode === "suppress") {
+            setStatus(
+              statusEl,
+              `Processadas: ${data.processed || 0} | Atualizadas: ${data.matched || 0} | Nao encontradas: ${data.notFound || 0}`,
+              true
+            );
+          } else {
+            setStatus(
+              statusEl,
+              `Processadas: ${data.processed || 0} | Salvas: ${data.saved || 0} | Duplicadas: ${data.duplicates || 0}`,
+              true
+            );
+          }
+
+          if (mode === "suppress") {
+            await loadSuppressed();
+          }
+        } catch (error) {
+          setStatus(statusEl, error.message, false);
+        } finally {
+          btn.disabled = false;
+        }
+      }
+
+      function formatStatus(row) {
+        const parts = [];
+        if (!row.is_active) parts.push("Total");
+        if (row.email_unsubscribed) parts.push("Email");
+        if (row.whatsapp_opt_out) parts.push("WA");
+        return parts.join(" + ") || "-";
+      }
+
+      function toLocalDate(value) {
+        if (!value) return "-";
+        const date = new Date(value);
+        return Number.isNaN(date.getTime()) ? "-" : date.toLocaleString("pt-BR");
+      }
+
+      async function loadSuppressed() {
+        const payload = await requestJson("/api/contacts/suppressed?limit=50");
+        const tbody = document.getElementById("suppressedBody");
+        tbody.textContent = "";
+
+        for (const row of payload.data || []) {
+          const tr = document.createElement("tr");
+          const cells = [
+            row.id,
+            row.name || "-",
+            row.email || "-",
+            row.phone || "-",
+            formatStatus(row),
+            row.alternate_email || "-",
+            row.contact_notes || "-",
+            toLocalDate(row.suppressed_at || row.updated_at)
+          ];
+
+          for (const value of cells) {
+            const td = document.createElement("td");
+            td.textContent = String(value);
+            tr.appendChild(td);
+          }
+
+          tbody.appendChild(tr);
+        }
+      }
+
+      async function loadSources() {
+        const payload = await requestJson("/api/sources");
+        state.sources = payload.data || [];
+        const select = document.getElementById("sourceSelect");
+        select.textContent = "";
+
+        for (const source of state.sources) {
+          const option = document.createElement("option");
+          option.value = String(source.id);
+          option.textContent = `${source.name}${source.is_active ? "" : " (inativa)"}`;
+          if (!source.is_active) option.disabled = true;
+          select.appendChild(option);
+        }
+
+        const manual = state.sources.find((source) => source.name === "scraping-manual");
+        if (manual) {
+          select.value = String(manual.id);
+        }
+      }
+
+      document.getElementById("searchInput").addEventListener("input", () => {
+        clearTimeout(window.__searchTimer);
+        window.__searchTimer = setTimeout(searchLeads, 350);
+      });
+
+      document.getElementById("selectAllBtn").addEventListener("click", selectAllResults);
+      for (const input of document.querySelectorAll('input[name="scope"]')) {
+        input.addEventListener("change", updateSelectionInfo);
+      }
+      document.getElementById("suppressBtn").addEventListener("click", suppressContact);
+      document.getElementById("importBtn").addEventListener("click", importCsv);
+      document.getElementById("refreshBtn").addEventListener("click", loadSuppressed);
+
+      document.getElementById("importMode").addEventListener("change", (event) => {
+        const mode = event.target.value;
+        document.getElementById("sourceWrap").style.display = mode === "leads" ? "block" : "none";
+        document.getElementById("csvHint").innerHTML = mode === "leads"
+          ? "Colunas para <strong>cadastrar</strong>: <code>name, email, phone</code>"
+          : 'Colunas para <strong>inativar</strong>: <code>email, phone, scope, reason, alternate_email</code><br />Exemplo: <code>ouvidoria@wevets.com.br,,email,"Pediu contato@wevets.com.br",contato@wevets.com.br</code>';
+      });
+
+      Promise.all([loadSources(), loadSuppressed()]).catch((error) => {
+        setStatus(document.getElementById("suppressStatus"), error.message, false);
+      });
+    </script>
+  </body>
+</html>

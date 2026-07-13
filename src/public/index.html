@@ -21,10 +21,16 @@
         <p class="eyebrow">Lead Operations</p>
         <h1>Painel de Scraping</h1>
       </div>
-      <div style="display:flex;gap:1rem;align-items:center">
-        <a href="/panel/whatsapp" style="color:var(--muted);font-size:0.85rem;text-decoration:none">WhatsApp</a>
-        <a href="/panel/email" style="color:var(--muted);font-size:0.85rem;text-decoration:none">Email</a>
-        <a href="/panel/engagement" style="color:var(--muted);font-size:0.85rem;text-decoration:none">Funil</a>
+      <div class="topbar-nav">
+        <nav class="nav-links" aria-label="Navegação do painel">
+          <a href="/panel/" class="active">Scraping</a>
+          <a href="/panel/engagement">Engajamento</a>
+          <a href="/panel/whatsapp">WhatsApp</a>
+          <a href="/panel/email">Email</a>
+          <a href="/panel/contacts">Contatos</a>
+          <a href="/panel/prospeccao">Prospecção</a>
+          <a href="/panel/ops">Operações</a>
+        </nav>
         <div class="health" id="healthBadge">API: verificando...</div>
       </div>
     </header>
@@ -34,6 +40,11 @@
         <article class="card">
           <h2>Total de Leads</h2>
           <p class="metric" id="metricTotalLeads">-</p>
+        </article>
+        <article class="card card-email-breakdown">
+          <h2>E-mail contatável</h2>
+          <p class="metric" id="metricRealEmail">-</p>
+          <p class="card-sub" id="metricEmailSub">-</p>
         </article>
         <article class="card">
           <h2>Leads Femininos</h2>

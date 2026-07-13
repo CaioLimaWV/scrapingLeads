@@ -17,7 +17,7 @@ function isLikelyJsonApi(source) {
   );
 }
 
-async function scrapeSource(source, config, logger) {
+async function scrapeSource(source, config, logger, hooks = {}) {
   if (source.name === "camara-deputados-api") {
     return scrapeCamaraDeputados(source, config, logger);
   }
@@ -31,7 +31,7 @@ async function scrapeSource(source, config, logger) {
   }
 
   if (source.name.startsWith("gmaps-")) {
-    return scrapeGoogleMaps(source, config, logger);
+    return scrapeGoogleMaps(source, config, logger, hooks);
   }
 
   if (isLikelyJsonApi(source)) {

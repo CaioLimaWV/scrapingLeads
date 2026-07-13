@@ -1,4 +1,5 @@
 const db = require("../database/knex");
+const { normalizeEmail, normalizePhone } = require("../utils/normalizeLead");
 
 const FEMALE_HINTS = new Set([
   "maria", "ana", "beatriz", "bianca", "bruna", "camila", "carla", "carolina", "claudia",
@@ -62,6 +63,113 @@ async function findLeadByEmailAndSource(emailNormalized, sourceId) {
     .select("id", "email_normalized", "source_id")
     .where({ email_normalized: emailNormalized, source_id: sourceId })
     .first();
+}
+
+async function findLeadsByIdentity({ email, phone }) {
+  const emailNormalized = email ? normalizeEmail(email) : null;
+  const phoneNormalized = phone ? normalizePhone(phone) : null;
+
+  if (!emailNormalized && !phoneNormalized) {
+    return [];
+  }
+
+  const query = db("leads")
+    .select(
+      "id",
+      "name",
+      "email",
+      "phone",
+      "source_id",
+      "is_active",
+      "email_unsubscribed",
+      "whatsapp_opt_out",
+      "contact_notes",
+      "alternate_email",
+      "suppressed_at"
+    );
+
+  query.where(function whereIdentity() {
+    if (emailNormalized) {
+      this.orWhere({ email_normalized: emailNormalized });
+    }
+    if (phoneNormalized) {
+      this.orWhere({ phone_normalized: phoneNormalized });
+    }
+  });
+
+  return query.orderBy("id", "desc");
+}
+
+async function searchLeads({ q, limit = 20 }) {
+  const term = String(q || "").trim();
+  if (!term) {
+    return [];
+  }
+
+  const emailNormalized = normalizeEmail(term);
+  const phoneNormalized = normalizePhone(term);
+  const likeTerm = `%${term.replace(/[%_]/g, "")}%`;
+
+  const query = db("leads")
+    .select(
+      "id",
+      "name",
+      "email",
+      "phone",
+      "source_id",
+      "is_active",
+      "email_unsubscribed",
+      "whatsapp_opt_out",
+      "contact_notes",
+      "alternate_email",
+      "suppressed_at",
+      "engagement_score",
+      "temperature"
+    )
+    .orderBy("id", "desc")
+    .limit(Math.min(Math.max(Number(limit) || 20, 1), 50));
+
+  query.where(function whereSearch() {
+    this.where("name", "like", likeTerm)
+      .orWhere("email", "like", likeTerm);
+
+    if (emailNormalized) {
+      this.orWhere({ email_normalized: emailNormalized });
+    }
+
+    if (phoneNormalized) {
+      this.orWhere({ phone_normalized: phoneNormalized });
+    }
+  });
+
+  return query;
+}
+
+async function listSuppressedLeads({ limit = 50, offset = 0 } = {}) {
+  return db("leads")
+    .select(
+      "id",
+      "name",
+      "email",
+      "phone",
+      "source_id",
+      "is_active",
+      "email_unsubscribed",
+      "whatsapp_opt_out",
+      "contact_notes",
+      "alternate_email",
+      "suppressed_at",
+      "updated_at"
+    )
+    .where(function whereSuppressed() {
+      this.where("is_active", false)
+        .orWhere("email_unsubscribed", true)
+        .orWhere("whatsapp_opt_out", true);
+    })
+    .orderBy("suppressed_at", "desc")
+    .orderBy("updated_at", "desc")
+    .limit(limit)
+    .offset(offset);
 }
 
 async function findLeadByFullIdentity({ sourceId, name, emailNormalized, phoneNormalized }) {
@@ -174,6 +282,56 @@ async function countLeads() {
   return Number(row?.total || 0);
 }
 
+async function countEmailContactBreakdown() {
+  const [mapscraperRow, leadLocalRow, realRow, sentRow, pendingRow] = await Promise.all([
+    db("leads").where("email_normalized", "like", "%@mapscraper.local").count("id as total").first(),
+    db("leads").where("email_normalized", "like", "%@lead.local").count("id as total").first(),
+    db("leads")
+      .where({ is_valid: true, is_active: true, email_unsubscribed: false })
+      .whereRaw("email_normalized NOT LIKE ?", ["%@mapscraper.local"])
+      .whereRaw("email_normalized NOT LIKE ?", ["%@lead.local"])
+      .count("id as total")
+      .first(),
+    db("leads as l")
+      .where("l.is_valid", true)
+      .where("l.is_active", true)
+      .whereRaw("l.email_normalized NOT LIKE ?", ["%@mapscraper.local"])
+      .whereRaw("l.email_normalized NOT LIKE ?", ["%@lead.local"])
+      .whereExists(function () {
+        this.select(1)
+          .from("email_sends as es")
+          .whereRaw("es.lead_id = l.id")
+          .where("es.status", "sent");
+      })
+      .count("l.id as total")
+      .first(),
+    db("leads")
+      .where({ is_valid: true, is_active: true, email_unsubscribed: false })
+      .whereRaw("email_normalized NOT LIKE ?", ["%@mapscraper.local"])
+      .whereRaw("email_normalized NOT LIKE ?", ["%@lead.local"])
+      .whereNotExists(function () {
+        this.select(1)
+          .from("email_sends as es")
+          .whereRaw("es.lead_id = leads.id")
+          .where("es.status", "sent");
+      })
+      .count("id as total")
+      .first()
+  ]);
+
+  const placeholderMapscraper = Number(mapscraperRow?.total || 0);
+  const placeholderLeadLocal = Number(leadLocalRow?.total || 0);
+
+  return {
+    realEmail: Number(realRow?.total || 0),
+    placeholder: placeholderMapscraper + placeholderLeadLocal,
+    placeholderMapscraper,
+    placeholderLeadLocal,
+    emailSent: Number(sentRow?.total || 0),
+    emailPending: Number(pendingRow?.total || 0)
+  };
+}
+
 async function countFemaleLeads() {
   const row = await db("leads")
     .whereRaw("JSON_UNQUOTE(JSON_EXTRACT(raw_data, '$.gender')) = ?", ["F"])
@@ -213,6 +371,78 @@ async function countInferredGenderLeads() {
   return { female, male };
 }
 
+async function countLeadsForEmailEnrichment() {
+  const row = await db("leads")
+    .where("email_normalized", "like", "%@mapscraper.local")
+    .whereRaw(
+      "JSON_UNQUOTE(JSON_EXTRACT(raw_data, '$.website')) IS NOT NULL AND JSON_UNQUOTE(JSON_EXTRACT(raw_data, '$.website')) NOT IN ('', 'null')"
+    )
+    .count("id as total")
+    .first();
+  return Number(row?.total || 0);
+}
+
+async function countUncontactedLeadsWithPhone() {
+  const row = await db("leads")
+    .where("contacted", false)
+    .where("is_active", true)
+    .where("is_valid", true)
+    .where("email_unsubscribed", false)
+    .where("whatsapp_opt_out", false)
+    .whereNotIn("temperature", ["lost"])
+    .whereNotNull("phone_normalized")
+    .where("phone_normalized", "!=", "")
+    .count("id as total")
+    .first();
+  return Number(row?.total || 0);
+}
+
+async function listLeadsForEmailEnrichment({ limit = 50, offset = 0 } = {}) {
+  return db("leads")
+    .select("id", "source_id", "name", "email", "email_normalized", "raw_data")
+    .where("email_normalized", "like", "%@mapscraper.local")
+    .whereRaw(
+      "JSON_UNQUOTE(JSON_EXTRACT(raw_data, '$.website')) IS NOT NULL AND JSON_UNQUOTE(JSON_EXTRACT(raw_data, '$.website')) NOT IN ('', 'null')"
+    )
+    .orderBy("id", "asc")
+    .limit(limit)
+    .offset(offset);
+}
+
+async function updateLeadEmailEnrichment(leadId, { email, emailNormalized, enrichmentMeta = {} }) {
+  const lead = await db("leads").where({ id: leadId }).first();
+  if (!lead) return null;
+
+  const duplicate = await db("leads")
+    .where({ email_normalized: emailNormalized, source_id: lead.source_id })
+    .whereNot({ id: leadId })
+    .first();
+
+  if (duplicate) {
+    return { updated: false, reason: "duplicate_email_in_source", duplicateId: duplicate.id };
+  }
+
+  let rawData = lead.raw_data;
+  if (typeof rawData === "string") {
+    try {
+      rawData = JSON.parse(rawData);
+    } catch {
+      rawData = {};
+    }
+  }
+  rawData = rawData || {};
+  rawData.email_enriched_at = new Date().toISOString();
+  Object.assign(rawData, enrichmentMeta);
+
+  await db("leads").where({ id: leadId }).update({
+    email,
+    email_normalized: emailNormalized,
+    raw_data: JSON.stringify(rawData)
+  });
+
+  return { updated: true, leadId };
+}
+
 async function listUncontactedLeadsWithPhone(limit = 100) {
   return db("leads")
     .select(
@@ -226,7 +456,10 @@ async function listUncontactedLeadsWithPhone(limit = 100) {
       "next_action"
     )
     .where("contacted", false)
+    .where("is_active", true)
+    .where("is_valid", true)
     .where("email_unsubscribed", false)
+    .where("whatsapp_opt_out", false)
     .whereNotIn("temperature", ["lost"])
     .whereNotNull("phone_normalized")
     .where("phone_normalized", "!=", "")
@@ -250,14 +483,22 @@ async function markLeadAsContacted(id) {
 module.exports = {
   findLeadByEmailAndSource,
   findLeadByFullIdentity,
+  findLeadsByIdentity,
+  searchLeads,
+  listSuppressedLeads,
   insertLead,
   insertDeduplicationLog,
   listLeads,
   listEngagementLeads,
   countLeads,
+  countEmailContactBreakdown,
   countFemaleLeads,
   countMaleLeads,
   countInferredGenderLeads,
+  listLeadsForEmailEnrichment,
+  countLeadsForEmailEnrichment,
+  countUncontactedLeadsWithPhone,
+  updateLeadEmailEnrichment,
   listUncontactedLeadsWithPhone,
   markLeadAsContacted
 };

@@ -3,6 +3,8 @@ const state = {
   sourceMap: new Map(),
   manualSourceId: null,
   selectedFieldArea: "",
+  latestExecutions: [],
+  executionPollTimer: null,
   executionsPagination: {
     limit: 20,
     offset: 0
@@ -45,6 +47,8 @@ const elements = {
   refreshExecutions: document.getElementById("refreshExecutions"),
   refreshLeads: document.getElementById("refreshLeads"),
   metricTotalLeads: document.getElementById("metricTotalLeads"),
+  metricRealEmail: document.getElementById("metricRealEmail"),
+  metricEmailSub: document.getElementById("metricEmailSub"),
   metricFemaleLeads: document.getElementById("metricFemaleLeads"),
   metricMaleLeads: document.getElementById("metricMaleLeads"),
   metricActiveSources: document.getElementById("metricActiveSources"),
@@ -97,11 +101,73 @@ function toLocalDate(value) {
 
 async function requestJson(url, options = {}) {
   const response = await fetch(url, options);
+  const body = await response.json().catch(() => ({}));
   if (!response.ok) {
-    const body = await response.json().catch(() => ({}));
-    throw new Error(body.message || `Request failed: ${response.status}`);
+    const error = new Error(body.message || `Request failed: ${response.status}`);
+    error.status = response.status;
+    error.body = body;
+    throw error;
   }
-  return response.json();
+  return body;
+}
+
+function hasRunningExecutions(rows = state.latestExecutions) {
+  return rows.some((row) => row.status === "running");
+}
+
+function getRunningExecutions(rows = state.latestExecutions) {
+  return rows.filter((row) => row.status === "running");
+}
+
+function updateRunStatusFromExecutions() {
+  const running = getRunningExecutions();
+  if (running.length === 0) {
+    return false;
+  }
+
+  const labels = running.map((row) => {
+    const sourceName = state.sourceMap.get(row.source_id) || `#${row.source_id}`;
+    const progress = row.total_scraped > 0 ? ` (${row.total_scraped} coletados)` : "";
+    return `${sourceName}${progress}`;
+  });
+
+  elements.runStatus.textContent = `Scraping em andamento: ${labels.join(", ")}`;
+  elements.runStatus.style.color = "#0f7a6a";
+  elements.runButton.disabled = true;
+  return true;
+}
+
+function stopExecutionPolling() {
+  if (state.executionPollTimer) {
+    clearInterval(state.executionPollTimer);
+    state.executionPollTimer = null;
+  }
+}
+
+function startExecutionPolling() {
+  if (state.executionPollTimer) {
+    return;
+  }
+
+  state.executionPollTimer = setInterval(async () => {
+    try {
+      await Promise.all([loadExecutions(), loadSummary()]);
+
+      if (!hasRunningExecutions()) {
+        stopExecutionPolling();
+        elements.runButton.disabled = false;
+        elements.runStatus.textContent = "Scraping finalizado. Atualize a tabela abaixo.";
+        elements.runStatus.style.color = "#2e8b57";
+        await loadLeads();
+        return;
+      }
+
+      updateRunStatusFromExecutions();
+    } catch (error) {
+      elements.runStatus.textContent = `Erro ao acompanhar execucao: ${error.message}`;
+      elements.runStatus.style.color = "#a93c3c";
+    }
+  }, 5000);
 }
 
 function setHealth(ok, label) {
@@ -270,6 +336,7 @@ async function loadExecutions() {
 
   const payload = await requestJson(`/api/executions?${qs.toString()}`);
   const rows = payload.data || [];
+  state.latestExecutions = rows;
   renderExecutions(rows);
 
   const page = Math.floor(state.executionsPagination.offset / state.executionsPagination.limit) + 1;
@@ -345,6 +412,20 @@ async function loadSummary() {
   const data = payload.data || {};
 
   elements.metricTotalLeads.textContent = String(data.totalLeads ?? 0);
+
+  const email = data.emailBreakdown || {};
+  const total = Number(data.totalLeads ?? 0);
+  const real = Number(email.realEmail ?? 0);
+  const placeholder = Number(email.placeholder ?? 0);
+  const pct = total > 0 ? ((real / total) * 100).toFixed(1) : "0.0";
+
+  elements.metricRealEmail.textContent = String(real);
+  elements.metricEmailSub.textContent =
+    `Placeholder: ${placeholder.toLocaleString("pt-BR")} · ${pct}% do total` +
+    (real > 0
+      ? ` · Campanhas: ${Number(email.emailSent ?? 0).toLocaleString("pt-BR")} enviados, ${Number(email.emailPending ?? 0).toLocaleString("pt-BR")} na fila`
+      : "");
+
   elements.metricFemaleLeads.textContent = String(data.femaleLeads ?? 0);
   elements.metricMaleLeads.textContent = String(data.maleLeads ?? 0);
   elements.metricActiveSources.textContent = String(data.activeSources ?? 0);
@@ -353,14 +434,14 @@ async function loadSummary() {
 
 async function runScraping() {
   elements.runButton.disabled = true;
-  elements.runStatus.textContent = "Executando scraping...";
+  elements.runStatus.textContent = "Iniciando scraping...";
   elements.runStatus.style.color = "#0f7a6a";
 
   try {
     const sourceId = elements.sourceSelect.value;
     const token = elements.runToken.value.trim();
 
-    const payload = await requestJson("/api/scrape/run", {
+    await requestJson("/api/scrape/run", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -369,15 +450,26 @@ async function runScraping() {
       body: JSON.stringify({ sourceId: sourceId || null })
     });
 
-    const totals = payload.data?.totals;
-    elements.runStatus.textContent = `Finalizado: scraped=${totals?.scraped ?? 0}, salvos=${totals?.saved ?? 0}, duplicados=${totals?.duplicates ?? 0}, erros=${totals?.errors ?? 0}`;
-    elements.runStatus.style.color = "#2e8b57";
+    elements.runStatus.textContent = sourceId
+      ? "Scraping iniciado em background para a fonte selecionada."
+      : "Scraping iniciado em background para todas as fontes ativas. Pode levar bastante tempo.";
+    elements.runStatus.style.color = "#0f7a6a";
 
-    await Promise.all([loadSummary(), loadExecutions(), loadLeads()]);
+    await loadExecutions();
+    updateRunStatusFromExecutions();
+    startExecutionPolling();
   } catch (error) {
+    if (error.status === 409) {
+      elements.runStatus.textContent = error.message || "Ja existe um scraping em andamento.";
+      elements.runStatus.style.color = "#b8860b";
+      await loadExecutions();
+      updateRunStatusFromExecutions();
+      startExecutionPolling();
+      return;
+    }
+
     elements.runStatus.textContent = `Falha: ${error.message}`;
     elements.runStatus.style.color = "#a93c3c";
-  } finally {
     elements.runButton.disabled = false;
   }
 }
@@ -463,6 +555,11 @@ async function initialLoad() {
     await loadHealth();
     await loadSources();
     await Promise.all([loadSummary(), loadExecutions(), loadLeads()]);
+
+    if (hasRunningExecutions()) {
+      updateRunStatusFromExecutions();
+      startExecutionPolling();
+    }
   } catch (error) {
     elements.runStatus.textContent = `Erro inicial: ${error.message}`;
     elements.runStatus.style.color = "#a93c3c";
@@ -522,7 +619,11 @@ elements.leadsPageSize.addEventListener("change", () => {
 
 setRunPanelMode(false);
 
-setInterval(loadExecutions, 20000);
-setInterval(loadSummary, 20000);
+setInterval(() => {
+  if (!state.executionPollTimer) {
+    loadExecutions();
+    loadSummary();
+  }
+}, 20000);
 
 initialLoad();

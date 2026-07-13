@@ -11,7 +11,8 @@ const {
 const {
   sendWithFallback,
   getCapacityMap,
-  getTotalRemaining
+  getTotalRemaining,
+  getAuthBlockedInfo
 } = require("./email/providerRegistry");
 const { injectPortfolioUtms, resolveUtmCampaign, extractUtmLinks } = require("../utils/emailUtm");
 const {
@@ -123,20 +124,52 @@ function buildMailOptions(opts) {
   return prepareOutgoingEmail(opts).mailOptions;
 }
 
-async function sendMonitorCopy({ subject, template, utmCampaign }) {
+async function resolveDispatchBudget({ batchLimit, dryRun, preferProvider = null }) {
+  const sentToday = await countSentToday();
+  const { dailyLimit } = env.email;
+  const capacity = await getCapacityMap();
+  const providersRemaining = capacity.reduce((sum, row) => sum + row.remaining, 0);
+  const activeProviders = capacity.filter((row) => row.remaining > 0);
+  const onlyMailersendLeft =
+    activeProviders.length === 1 && activeProviders[0].provider.name === "mailersend";
+  const effectivePrefer = preferProvider || (onlyMailersendLeft ? "mailersend" : null);
+  const wantsMonitor = !dryRun && !!env.email.monitorTo && !onlyMailersendLeft;
+  const globalAvailable = Math.max(0, Math.min(dailyLimit - sentToday, providersRemaining));
+  const available = batchLimit ? Math.min(globalAvailable, batchLimit) : globalAvailable;
+  const leadBatchLimit = wantsMonitor ? Math.max(0, available - 1) : available;
+
+  return {
+    sentToday,
+    dailyLimit,
+    providersRemaining,
+    onlyMailersendLeft,
+    preferProvider: effectivePrefer,
+    wantsMonitor,
+    available,
+    leadBatchLimit
+  };
+}
+
+async function sendMonitorCopy({ subject, template, utmCampaign, skipForMailersendReserve = false }) {
   const { monitorTo, monitorName, baseUrl } = env.email;
   if (!monitorTo) return false;
+
+  if (skipForMailersendReserve) {
+    logger.info("Skipping monitor copy to preserve MailerSend daily slots for leads");
+    return false;
+  }
 
   const token = generateToken();
   const fakeLead = { name: monitorName };
   const bodyHtml = toHtml(applyTemplate(template, fakeLead));
+  const personalizedSubject = applyTemplate(subject, fakeLead);
   const unsubUrl = baseUrl ? `${baseUrl}/track/unsub/${token}` : null;
 
   const mailOptions = buildMailOptions({
     from: env.email.from,
     fromName: env.email.fromName,
     to: monitorTo,
-    subject,
+    subject: personalizedSubject,
     bodyHtml,
     token,
     baseUrl,
@@ -160,21 +193,17 @@ async function runEmailCampaign({
   utmCampaign = null,
   batchLimit = null,
   minDaysSinceEmail = null,
-  requirePriorEmail = false
+  requirePriorEmail = false,
+  preferProvider = null
 }) {
   const totals = { sent: 0, failed: 0, skipped: 0, remaining: 0, byProvider: {}, monitorSent: false };
 
-  const sentToday = await countSentToday();
-  const { dailyLimit } = env.email;
-  const providersRemaining = await getTotalRemaining();
-  const globalAvailable = Math.max(0, Math.min(dailyLimit - sentToday, providersRemaining));
-  const available = batchLimit ? Math.min(globalAvailable, batchLimit) : globalAvailable;
-  const wantsMonitor = !dryRun && !!env.email.monitorTo;
-  const leadBatchLimit = wantsMonitor ? Math.max(0, available - 1) : available;
+  const budget = await resolveDispatchBudget({ batchLimit, dryRun, preferProvider });
+  const { dailyLimit, preferProvider: effectivePrefer, wantsMonitor, leadBatchLimit, available } = budget;
 
   if (leadBatchLimit <= 0 && !wantsMonitor) {
     logger.info(
-      { sentToday, dailyLimit, providersRemaining, batchLimit },
+      { sentToday: budget.sentToday, dailyLimit, providersRemaining: budget.providersRemaining, batchLimit },
       "Email daily capacity reached, skipping campaign"
     );
     totals.remaining = 0;
@@ -216,12 +245,13 @@ async function runEmailCampaign({
 
     const token = generateToken();
     const bodyHtml = toHtml(applyTemplate(template, lead));
+    const personalizedSubject = applyTemplate(subject, lead);
     const unsubUrl = baseUrl ? `${baseUrl}/track/unsub/${token}` : null;
     const prepared = prepareOutgoingEmail({
       from: env.email.from,
       fromName: env.email.fromName,
       to: lead.email,
-      subject,
+      subject: personalizedSubject,
       bodyHtml,
       token,
       baseUrl,
@@ -236,12 +266,14 @@ async function runEmailCampaign({
     }
 
     try {
-      const { providerName } = await sendWithFallback(prepared.mailOptions);
+      const { providerName } = await sendWithFallback(prepared.mailOptions, {
+        preferProvider: effectivePrefer
+      });
 
       await logEmailSend(null, {
         leadId: lead.id,
         campaignId,
-        subject,
+        subject: personalizedSubject,
         bodyPreview: prepared.bodyPreview,
         status: "sent",
         errorMessage: null,
@@ -266,7 +298,7 @@ async function runEmailCampaign({
         leadId: lead.id,
         campaignId,
         campaignStepId: null,
-        subject,
+        subject: personalizedSubject,
         bodyPreview: prepared.bodyPreview,
         status: "failed",
         errorMessage: err.message,
@@ -297,7 +329,7 @@ async function runEmailCampaign({
   return totals;
 }
 
-async function runCampaignSequenceDispatch(campaign, { dryRun = false } = {}) {
+async function runCampaignSequenceDispatch(campaign, { dryRun = false, preferProvider = null } = {}) {
   const totals = {
     sent: 0,
     failed: 0,
@@ -308,17 +340,9 @@ async function runCampaignSequenceDispatch(campaign, { dryRun = false } = {}) {
     monitorSent: false
   };
 
-  const sentToday = await countSentToday();
-  const { dailyLimit } = env.email;
-  const providersRemaining = await getTotalRemaining();
-  const globalAvailable = Math.max(
-    0,
-    Math.min(dailyLimit - sentToday, providersRemaining)
-  );
   const batchLimit = campaign.daily_batch_size || env.email.defaultBatch;
-  const available = Math.min(globalAvailable, batchLimit);
-  const wantsMonitor = !dryRun && !!env.email.monitorTo;
-  const leadBatchLimit = wantsMonitor ? Math.max(0, available - 1) : available;
+  const budget = await resolveDispatchBudget({ batchLimit, dryRun, preferProvider });
+  const { dailyLimit, preferProvider: effectivePrefer, wantsMonitor, leadBatchLimit } = budget;
 
   if (leadBatchLimit <= 0 && !wantsMonitor) {
     totals.remaining = 0;
@@ -356,12 +380,13 @@ async function runCampaignSequenceDispatch(campaign, { dryRun = false } = {}) {
 
     const token = generateToken();
     const bodyHtml = toHtml(applyTemplate(step.template, lead));
+    const personalizedSubject = applyTemplate(step.subject, lead);
     const unsubUrl = baseUrl ? `${baseUrl}/track/unsub/${token}` : null;
     const prepared = prepareOutgoingEmail({
       from: env.email.from,
       fromName: env.email.fromName,
       to: lead.email,
-      subject: step.subject,
+      subject: personalizedSubject,
       bodyHtml,
       token,
       baseUrl,
@@ -379,13 +404,15 @@ async function runCampaignSequenceDispatch(campaign, { dryRun = false } = {}) {
     }
 
     try {
-      const { providerName } = await sendWithFallback(prepared.mailOptions);
+      const { providerName } = await sendWithFallback(prepared.mailOptions, {
+        preferProvider: effectivePrefer
+      });
 
       await logEmailSend(null, {
         leadId: lead.id,
         campaignId: campaign.id,
         campaignStepId: step.id,
-        subject: step.subject,
+        subject: personalizedSubject,
         bodyPreview: prepared.bodyPreview,
         status: "sent",
         errorMessage: null,
@@ -414,7 +441,7 @@ async function runCampaignSequenceDispatch(campaign, { dryRun = false } = {}) {
         leadId: lead.id,
         campaignId: campaign.id,
         campaignStepId: step.id,
-        subject: step.subject,
+        subject: personalizedSubject,
         bodyPreview: prepared.bodyPreview,
         status: "failed",
         errorMessage: err.message,
@@ -444,7 +471,7 @@ async function runCampaignSequenceDispatch(campaign, { dryRun = false } = {}) {
   return totals;
 }
 
-async function dispatchSavedCampaign(campaignId, { dryRun = false } = {}) {
+async function dispatchSavedCampaign(campaignId, { dryRun = false, preferProvider = null } = {}) {
   const campaign = await getCampaignById(campaignId);
   if (!campaign) {
     const err = new Error("Campanha não encontrada");
@@ -459,7 +486,7 @@ async function dispatchSavedCampaign(campaignId, { dryRun = false } = {}) {
 
   const steps = await listStepsByCampaignId(campaign.id);
   if (steps.length) {
-    return runCampaignSequenceDispatch(campaign, { dryRun });
+    return runCampaignSequenceDispatch(campaign, { dryRun, preferProvider });
   }
 
   return runEmailCampaign({
@@ -472,7 +499,8 @@ async function dispatchSavedCampaign(campaignId, { dryRun = false } = {}) {
     utmCampaign: campaign.slug,
     batchLimit: campaign.daily_batch_size || env.email.defaultBatch,
     minDaysSinceEmail: campaign.min_days_since_email,
-    requirePriorEmail: campaign.require_prior_email
+    requirePriorEmail: campaign.require_prior_email,
+    preferProvider
   });
 }
 
@@ -481,6 +509,17 @@ async function getEmailStatus() {
   const { dailyLimit } = env.email;
   const capacity = await getCapacityMap();
   const providersRemaining = capacity.reduce((sum, c) => sum + c.remaining, 0);
+  const authBlocked = getAuthBlockedInfo();
+
+  const recentMailersendFailure = await db("email_sends")
+    .where({ status: "failed" })
+    .whereRaw("DATE(created_at) >= CURDATE()")
+    .whereRaw("error_message LIKE ?", ["%MailerSend%"])
+    .orderBy("id", "desc")
+    .select("error_message", "created_at")
+    .first();
+
+  const mailersendCapacity = capacity.find((row) => row.provider.name === "mailersend");
 
   return {
     sentToday,
@@ -491,6 +530,16 @@ async function getEmailStatus() {
     delayMinMs: env.email.delayMinMs,
     delayMaxMs: env.email.delayMaxMs,
     defaultBatch: env.email.defaultBatch,
+    authBlocked,
+    mailersend: {
+      sentToday: mailersendCapacity?.sent || 0,
+      dailyLimit: mailersendCapacity?.provider.dailyLimit || 0,
+      remaining: mailersendCapacity?.remaining || 0,
+      lastError:
+        authBlocked.mailersend?.message ||
+        recentMailersendFailure?.error_message ||
+        null
+    },
     providers: await Promise.all(
       capacity.map(async (c) => {
         const entry = {
@@ -553,6 +602,7 @@ async function sendTestEmail({ toEmail, subject, template }) {
   const token = generateToken();
   const fakeLead = { name: "Teste" };
   const bodyHtml = toHtml(applyTemplate(template, fakeLead));
+  const personalizedSubject = applyTemplate(subject, fakeLead);
   const { baseUrl } = env.email;
   const unsubUrl = baseUrl ? `${baseUrl}/track/unsub/${token}` : null;
   const leadId = await resolveLeadIdForTestEmail(toEmail);
@@ -561,7 +611,7 @@ async function sendTestEmail({ toEmail, subject, template }) {
     from: env.email.from,
     fromName: env.email.fromName,
     to: toEmail,
-    subject: `[TESTE] ${subject}`,
+    subject: `[TESTE] ${personalizedSubject}`,
     bodyHtml,
     token,
     baseUrl,
@@ -572,7 +622,7 @@ async function sendTestEmail({ toEmail, subject, template }) {
 
   await logEmailSend(null, {
     leadId,
-    subject: `[TESTE] ${subject}`,
+    subject: `[TESTE] ${personalizedSubject}`,
     bodyPreview: prepared.bodyPreview,
     status: "sent",
     errorMessage: null,

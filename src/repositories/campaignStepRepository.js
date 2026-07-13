@@ -1,4 +1,5 @@
 const db = require("../database/knex");
+const { applyHigherPriorityExclusion } = require("../services/email/campaignExclusive");
 
 function applySegmentFilters(query, { sourceIds, fieldAreas }) {
   const ids = (sourceIds || []).map(Number).filter((id) => Number.isInteger(id) && id > 0);
@@ -18,7 +19,7 @@ function applySegmentFilters(query, { sourceIds, fieldAreas }) {
   return query;
 }
 
-function buildStepEligibleQuery(campaign) {
+function buildStepEligibleQuery(campaign, activeCampaigns = []) {
   const campaignId = campaign.id;
 
   let query = db("leads")
@@ -72,11 +73,17 @@ function buildStepEligibleQuery(campaign) {
     fieldAreas: campaign.field_areas
   });
 
+  if (activeCampaigns.length) {
+    applyHigherPriorityExclusion(query, campaign, activeCampaigns);
+  }
+
   return query;
 }
 
 async function listEligibleLeadSteps(campaign, limit = 50) {
-  const rows = await buildStepEligibleQuery(campaign).limit(limit);
+  const { getActiveCampaignsOrdered } = require("../services/email/campaignExclusive");
+  const activeCampaigns = await getActiveCampaignsOrdered();
+  const rows = await buildStepEligibleQuery(campaign, activeCampaigns).limit(limit);
   return rows.map((row) => ({
     lead: {
       id: row.id,
@@ -95,7 +102,12 @@ async function listEligibleLeadSteps(campaign, limit = 50) {
 }
 
 async function countEligibleLeadSteps(campaign) {
-  const row = await buildStepEligibleQuery(campaign).clearSelect().count("leads.id as count").first();
+  const { getActiveCampaignsOrdered } = require("../services/email/campaignExclusive");
+  const activeCampaigns = await getActiveCampaignsOrdered();
+  const row = await buildStepEligibleQuery(campaign, activeCampaigns)
+    .clearSelect()
+    .count("leads.id as count")
+    .first();
   return Number(row?.count || 0);
 }
 

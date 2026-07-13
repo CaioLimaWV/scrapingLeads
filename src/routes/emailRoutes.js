@@ -205,7 +205,11 @@ router.post("/campaigns/:id/dispatch", async (req, res, next) => {
     if (!checkToken(req, res)) return res.status(401).json({ message: "Unauthorized" });
     const id = Number(req.params.id);
     const dryRun = req.body.dryRun === true || req.body.dryRun === "true";
-    const totals = await dispatchSavedCampaign(id, { dryRun });
+    const preferProvider =
+      req.body.preferProvider === "mailersend" || req.body.useMailersend === true
+        ? "mailersend"
+        : null;
+    const totals = await dispatchSavedCampaign(id, { dryRun, preferProvider });
     res.json({ success: true, totals });
   } catch (err) {
     if (err.statusCode) return res.status(err.statusCode).json({ message: err.message });
@@ -297,6 +301,8 @@ router.post("/unsubscribe/:leadId", async (req, res, next) => {
       return res.status(400).json({ message: "Invalid lead ID" });
     }
     await markLeadUnsubscribed(leadId);
+    const { recalculateLeadEngagement } = require("../services/leadScoringService");
+    await recalculateLeadEngagement(leadId);
     res.json({ success: true });
   } catch (err) {
     next(err);

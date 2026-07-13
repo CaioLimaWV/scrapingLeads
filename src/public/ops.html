@@ -1,0 +1,735 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Operações — Comandos</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./styles.css" />
+    <style>
+      .ops-intro {
+        margin: 0 0 1rem;
+        font-size: 0.88rem;
+        line-height: 1.55;
+        color: var(--muted);
+      }
+      .ops-intro code { font-size: 0.8rem; }
+      .ops-intro a { color: var(--accent); }
+      .ops-tabs {
+        display: flex;
+        gap: 0.35rem;
+        flex-wrap: wrap;
+        margin-bottom: 1rem;
+        padding-bottom: 0.5rem;
+        border-bottom: 1px solid var(--border);
+      }
+      .ops-tab {
+        font-family: inherit;
+        font-size: 0.78rem;
+        font-weight: 600;
+        padding: 0.45rem 0.85rem;
+        border-radius: 99px;
+        border: 1px solid var(--border);
+        background: var(--card);
+        color: var(--ink);
+        cursor: pointer;
+        transition: border-color 0.15s, background 0.15s, color 0.15s;
+        white-space: nowrap;
+      }
+      .ops-tab:hover { border-color: var(--accent); color: var(--accent); }
+      .ops-tab.active {
+        background: rgba(15, 122, 106, 0.12);
+        border-color: #0f7a6a;
+        color: #0f7a6a;
+      }
+      .ops-panel { display: none; }
+      .ops-panel.active { display: block; }
+      .ops-panel h3 {
+        margin: 0 0 0.65rem;
+        font-size: 0.95rem;
+        color: var(--ink);
+      }
+      .cmd-list { display: grid; gap: 0.65rem; }
+      .cmd-card {
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 0.85rem 1rem;
+        background: var(--card);
+      }
+      .cmd-card h4 { margin: 0 0 0.35rem; font-size: 0.9rem; }
+      .cmd-card p {
+        margin: 0 0 0.5rem;
+        font-size: 0.8rem;
+        line-height: 1.45;
+        color: var(--muted);
+      }
+      .cmd-row {
+        display: flex;
+        gap: 0.5rem;
+        align-items: flex-start;
+        flex-wrap: wrap;
+        margin-bottom: 0.35rem;
+      }
+      .cmd-row:last-child { margin-bottom: 0; }
+      .cmd-row pre {
+        flex: 1;
+        min-width: 200px;
+        margin: 0;
+        padding: 0.55rem 0.7rem;
+        border-radius: 8px;
+        background: rgba(0, 0, 0, 0.06);
+        font-family: "IBM Plex Mono", monospace;
+        font-size: 0.75rem;
+        line-height: 1.45;
+        overflow-x: auto;
+        white-space: pre-wrap;
+        word-break: break-all;
+      }
+      .cmd-row button {
+        flex-shrink: 0;
+        font-size: 0.75rem;
+        padding: 0.35rem 0.65rem;
+      }
+      .tag-row { display: flex; gap: 0.35rem; flex-wrap: wrap; margin-top: 0.45rem; }
+      .tag {
+        font-size: 0.65rem;
+        padding: 2px 8px;
+        border-radius: 99px;
+        font-weight: 700;
+        background: rgba(15, 122, 106, 0.12);
+        color: #0f7a6a;
+      }
+      .tag.warn { background: rgba(240, 180, 41, 0.2); color: var(--ink); }
+      .tag.danger { background: rgba(169, 60, 60, 0.12); color: #a93c3c; }
+      .snapshot-box {
+        margin-top: 0.65rem;
+        padding: 0.65rem 0.75rem;
+        border-radius: 8px;
+        background: rgba(0, 0, 0, 0.06);
+        font-family: "IBM Plex Mono", monospace;
+        font-size: 0.7rem;
+        line-height: 1.45;
+        max-height: 320px;
+        overflow: auto;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+      .snapshot-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.5rem; }
+      .snapshot-actions button { font-size: 0.78rem; }
+    </style>
+  </head>
+  <body>
+    <div class="bg-orb orb-a"></div>
+    <div class="bg-orb orb-b"></div>
+
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">Lead Operations</p>
+        <h1>Operações &amp; Comandos</h1>
+      </div>
+      <div class="topbar-nav">
+        <nav class="nav-links" aria-label="Navegação do painel">
+          <a href="/panel/">Scraping</a>
+          <a href="/panel/engagement">Engajamento</a>
+          <a href="/panel/whatsapp">WhatsApp</a>
+          <a href="/panel/email">Email</a>
+          <a href="/panel/contacts">Contatos</a>
+          <a href="/panel/prospeccao">Prospecção</a>
+          <a href="/panel/ops" class="active">Operações</a>
+        </nav>
+        <div class="health" id="healthBadge">API: verificando...</div>
+      </div>
+    </header>
+
+    <main class="layout">
+      <section class="panel">
+        <p class="ops-intro">
+          Referência dos comandos na raiz do projeto
+          (<code>~/www/ESTUDOS/scrapingLeads</code>).
+          Após alterar código do <strong>backend</strong> ou o <code>.env</code>, reinicie
+          <code>npm run dev</code> — não há hot reload.
+          Documentação completa: <code>docs/COMANDOS.md</code>.
+        </p>
+
+        <div class="ops-tabs" role="tablist" aria-label="Categorias de comandos">
+          <button type="button" class="ops-tab active" role="tab" data-tab="servidor" aria-selected="true">Servidor</button>
+          <button type="button" class="ops-tab" role="tab" data-tab="docker" aria-selected="false">Docker</button>
+          <button type="button" class="ops-tab" role="tab" data-tab="banco" aria-selected="false">Banco</button>
+          <button type="button" class="ops-tab" role="tab" data-tab="scraping" aria-selected="false">Scraping</button>
+          <button type="button" class="ops-tab" role="tab" data-tab="leads" aria-selected="false">Leads</button>
+          <button type="button" class="ops-tab" role="tab" data-tab="email" aria-selected="false">Email</button>
+          <button type="button" class="ops-tab" role="tab" data-tab="diagnostico" aria-selected="false">Diagnóstico</button>
+          <button type="button" class="ops-tab" role="tab" data-tab="git" aria-selected="false">Git</button>
+          <button type="button" class="ops-tab" role="tab" data-tab="dev" aria-selected="false">Dev</button>
+        </div>
+
+        <!-- SERVIDOR -->
+        <div class="ops-panel active" id="panel-servidor" role="tabpanel">
+          <h3>Servidor &amp; aplicação</h3>
+          <div class="cmd-list">
+            <article class="cmd-card">
+              <h4>Subir API em desenvolvimento</h4>
+              <p>Inicia o Express na porta 3000 (painel + APIs).</p>
+              <div class="cmd-row">
+                <pre>npm run dev</pre>
+                <button type="button" class="ghost copy-cmd">Copiar</button>
+              </div>
+              <div class="tag-row"><span class="tag">uso diário</span></div>
+            </article>
+            <article class="cmd-card">
+              <h4>Produção</h4>
+              <p>Mesmo app com <code>NODE_ENV=production</code> (logs JSON).</p>
+              <div class="cmd-row">
+                <pre>npm start</pre>
+                <button type="button" class="ghost copy-cmd">Copiar</button>
+              </div>
+            </article>
+            <article class="cmd-card">
+              <h4>Instalar dependências</h4>
+              <p>Após clonar ou quando o <code>package.json</code> mudar.</p>
+              <div class="cmd-row">
+                <pre>npm install</pre>
+                <button type="button" class="ghost copy-cmd">Copiar</button>
+              </div>
+            </article>
+            <article class="cmd-card">
+              <h4>Configurar .env</h4>
+              <p>Copia o template e preenche credenciais. Reinicie o servidor após editar.</p>
+              <div class="cmd-row">
+                <pre>cp .env.example .env</pre>
+                <button type="button" class="ghost copy-cmd">Copiar</button>
+              </div>
+            </article>
+            <article class="cmd-card">
+              <h4>Verificar se a API está no ar</h4>
+              <div class="cmd-row">
+                <pre>curl -s http://localhost:3000/health</pre>
+                <button type="button" class="ghost copy-cmd">Copiar</button>
+              </div>
+            </article>
+            <article class="cmd-card">
+              <h4>Liberar porta 3000 (EADDRINUSE)</h4>
+              <div class="cmd-row">
+                <pre>fuser -k 3000/tcp 2>/dev/null; npm run dev</pre>
+                <button type="button" class="ghost copy-cmd">Copiar</button>
+              </div>
+              <div class="tag-row"><span class="tag danger">interrompe scraping em andamento</span></div>
+            </article>
+            <article class="cmd-card">
+              <h4>Reiniciar após mudar .env</h4>
+              <p>O dotenv lê o arquivo só na inicialização.</p>
+              <div class="cmd-row">
+                <pre>pkill -f "node src/app.js"; npm run dev</pre>
+                <button type="button" class="ghost copy-cmd">Copiar</button>
+              </div>
+            </article>
+          </div>
+        </div>
+
+        <!-- DOCKER -->
+        <div class="ops-panel" id="panel-docker" role="tabpanel" hidden>
+          <h3>Docker &amp; MySQL</h3>
+          <div class="cmd-list">
+            <article class="cmd-card">
+              <h4>Subir MySQL em background</h4>
+              <p>Banco local na porta 3307. Deixe rodando antes do painel.</p>
+              <div class="cmd-row">
+                <pre>docker compose up -d</pre>
+                <button type="button" class="ghost copy-cmd">Copiar</button>
+              </div>
+            </article>
+            <article class="cmd-card">
+              <h4>Parar containers</h4>
+              <div class="cmd-row">
+                <pre>docker compose down</pre>
+                <button type="button" class="ghost copy-cmd">Copiar</button>
+              </div>
+            </article>
+            <article class="cmd-card">
+              <h4>Ver logs do MySQL</h4>
+              <div class="cmd-row">
+                <pre>docker compose logs -f mysql</pre>
+                <button type="button" class="ghost copy-cmd">Copiar</button>
+              </div>
+            </article>
+          </div>
+        </div>
+
+        <!-- BANCO -->
+        <div class="ops-panel" id="panel-banco" role="tabpanel" hidden>
+          <h3>Banco de dados (Knex)</h3>
+          <div class="cmd-list">
+            <article class="cmd-card">
+              <h4>Aplicar migrações pendentes</h4>
+              <p>Rode após <code>git pull</code> quando houver migrations novas.</p>
+              <div class="cmd-row">
+                <pre>npm run migrate:latest</pre>
+                <button type="button" class="ghost copy-cmd">Copiar</button>
+              </div>
+            </article>
+            <article class="cmd-card">
+              <h4>Status das migrações</h4>
+              <p>Quais já rodaram e quais estão pendentes.</p>
+              <div class="cmd-row">
+                <pre>npx knex migrate:status</pre>
+                <button type="button" class="ghost copy-cmd">Copiar</button>
+              </div>
+            </article>
+            <article class="cmd-card">
+              <h4>Reverter último batch</h4>
+              <div class="cmd-row">
+                <pre>npm run migrate:rollback</pre>
+                <button type="button" class="ghost copy-cmd">Copiar</button>
+              </div>
+              <div class="tag-row"><span class="tag danger">destructivo</span></div>
+            </article>
+            <article class="cmd-card">
+              <h4>Criar arquivo de migration</h4>
+              <div class="cmd-row">
+                <pre>npm run migrate:make nome_da_migracao</pre>
+                <button type="button" class="ghost copy-cmd">Copiar</button>
+              </div>
+            </article>
+            <article class="cmd-card">
+              <h4>Migration falhou no meio</h4>
+              <div class="cmd-row">
+                <pre>npm run migrate:rollback
+# corrija o arquivo
+npm run migrate:latest</pre>
+                <button type="button" class="ghost copy-cmd">Copiar</button>
+              </div>
+            </article>
+          </div>
+        </div>
+
+        <!-- SCRAPING -->
+        <div class="ops-panel" id="panel-scraping" role="tabpanel" hidden>
+          <h3>Scraping de leads</h3>
+          <div class="cmd-list">
+            <article class="cmd-card">
+              <h4>Scraping manual (CLI)</h4>
+              <p>Sem <code>--sourceId</code> = todas as fontes ativas.</p>
+              <div class="cmd-row">
+                <pre>npm run scrape:manual</pre>
+                <button type="button" class="ghost copy-cmd">Copiar</button>
+              </div>
+              <div class="cmd-row">
+                <pre>npm run scrape:manual -- --sourceId=260</pre>
+                <button type="button" class="ghost copy-cmd">Copiar</button>
+              </div>
+            </article>
+            <article class="cmd-card">
+              <h4>Scraping pelo painel</h4>
+              <p><a href="/panel/">Scraping</a> → fonte → <strong>Executar Agora</strong>. Equivalente ao curl abaixo.</p>
+              <div class="cmd-row">
+                <pre>curl -X POST -H "x-panel-token: $PANEL_RUN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"sourceId":260}' \
+  http://localhost:3000/api/scrape/run</pre>
+                <button type="button" class="ghost copy-cmd">Copiar</button>
+              </div>
+            </article>
+            <article class="cmd-card">
+              <h4>Listar fontes (IDs)</h4>
+              <div class="cmd-row">
+                <pre>curl -s http://localhost:3000/api/sources | jq '.data[] | {id,name,is_active}'</pre>
+                <button type="button" class="ghost copy-cmd">Copiar</button>
+              </div>
+            </article>
+            <article class="cmd-card">
+              <h4>Fontes CNPJ (SP + OpenCNPJ/CNPJA)</h4>
+              <p>13 fontes <code>cnpj-*</code> com <code>uf=SP</code>.</p>
+              <div class="cmd-row">
+                <pre>curl -s http://localhost:3000/api/sources | jq '.data[] | select(.name|startswith("cnpj")) | {id,name}'</pre>
+                <button type="button" class="ghost copy-cmd">Copiar</button>
+              </div>
+              <div class="cmd-row">
+                <pre>npm run scrape:manual -- --sourceId=260</pre>
+                <button type="button" class="ghost copy-cmd">Copiar</button>
+              </div>
+              <div class="tag-row"><span class="tag">CNPJ_DEFAULT_UF=SP</span></div>
+            </article>
+            <article class="cmd-card">
+              <h4>Histórico de execuções</h4>
+              <p>Debug: “por que não saiu lead novo?”</p>
+              <div class="cmd-row">
+                <pre>curl -s "http://localhost:3000/api/executions?limit=10" | jq</pre>
+                <button type="button" class="ghost copy-cmd">Copiar</button>
+              </div>
+            </article>
+            <article class="cmd-card">
+              <h4>Log do scraper em tempo real</h4>
+              <div class="cmd-row">
+                <pre>tail -f scrape.log</pre>
+                <button type="button" class="ghost copy-cmd">Copiar</button>
+              </div>
+            </article>
+          </div>
+        </div>
+
+        <!-- LEADS -->
+        <div class="ops-panel" id="panel-leads" role="tabpanel" hidden>
+          <h3>Leads &amp; enriquecimento</h3>
+          <div class="cmd-list">
+            <article class="cmd-card">
+              <h4>Re-enriquecer e-mails (segunda passada)</h4>
+              <p>Visita o <strong>website</strong> de leads com placeholder <code>@mapscraper.local</code>.</p>
+              <div class="cmd-row">
+                <pre>npm run enrich:email -- --limit=1000</pre>
+                <button type="button" class="ghost copy-cmd">Copiar</button>
+              </div>
+              <div class="cmd-row">
+                <pre>npm run enrich:email -- --limit=200 --dry-run</pre>
+                <button type="button" class="ghost copy-cmd">Copiar</button>
+              </div>
+              <div class="cmd-row">
+                <pre>npm run enrich:email -- --limit=500 --delay-ms=800</pre>
+                <button type="button" class="ghost copy-cmd">Copiar</button>
+              </div>
+              <div class="tag-row">
+                <span class="tag">--dry-run</span>
+                <span class="tag warn">~1,2s por lead</span>
+              </div>
+            </article>
+            <article class="cmd-card">
+              <h4>Recalcular engajamento (scores)</h4>
+              <div class="cmd-row">
+                <pre>npm run engagement:recalculate</pre>
+                <button type="button" class="ghost copy-cmd">Copiar</button>
+              </div>
+            </article>
+            <article class="cmd-card">
+              <h4>Breakdown e-mail real vs placeholder</h4>
+              <div class="cmd-row">
+                <pre>curl -s http://localhost:3000/api/dashboard/summary | jq '.data.emailBreakdown'</pre>
+                <button type="button" class="ghost copy-cmd">Copiar</button>
+              </div>
+            </article>
+            <article class="cmd-card">
+              <h4>Fila WhatsApp (não contatados)</h4>
+              <div class="cmd-row">
+                <pre>curl -s http://localhost:3000/api/leads/uncontacted | jq '.data | length'</pre>
+                <button type="button" class="ghost copy-cmd">Copiar</button>
+              </div>
+            </article>
+            <article class="cmd-card">
+              <h4>Listar leads (debug)</h4>
+              <div class="cmd-row">
+                <pre>curl -s "http://localhost:3000/api/leads?limit=20&offset=0" | jq</pre>
+                <button type="button" class="ghost copy-cmd">Copiar</button>
+              </div>
+            </article>
+          </div>
+        </div>
+
+        <!-- EMAIL -->
+        <div class="ops-panel" id="panel-email" role="tabpanel" hidden>
+          <h3>Campanhas de e-mail</h3>
+          <div class="cmd-list">
+            <article class="cmd-card">
+              <h4>Disparo pelo painel</h4>
+              <p><a href="/panel/email">Email</a> → campanha → Disparar / Dry Run / Teste.</p>
+            </article>
+            <article class="cmd-card">
+              <h4>Status e cotas (API)</h4>
+              <div class="cmd-row">
+                <pre>curl -s http://localhost:3000/api/email/status | jq</pre>
+                <button type="button" class="ghost copy-cmd">Copiar</button>
+              </div>
+            </article>
+            <article class="cmd-card">
+              <h4>Enviar e-mail de teste</h4>
+              <div class="cmd-row">
+                <pre>curl -X POST -H "x-panel-token: $PANEL_RUN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"toEmail":"voce@gmail.com","subject":"Teste","template":"Olá {{nome}}"}' \
+  http://localhost:3000/api/email/test</pre>
+                <button type="button" class="ghost copy-cmd">Copiar</button>
+              </div>
+            </article>
+            <article class="cmd-card">
+              <h4>Campanha dry-run (simula sem enviar)</h4>
+              <div class="cmd-row">
+                <pre>curl -X POST -H "x-panel-token: $PANEL_RUN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"subject":"Oi","template":"Olá {{nome}}","dryRun":true}' \
+  http://localhost:3000/api/email/run</pre>
+                <button type="button" class="ghost copy-cmd">Copiar</button>
+              </div>
+            </article>
+            <article class="cmd-card">
+              <h4>Histórico e analytics</h4>
+              <div class="cmd-row">
+                <pre>curl -s "http://localhost:3000/api/email/history?limit=20" | jq</pre>
+                <button type="button" class="ghost copy-cmd">Copiar</button>
+              </div>
+              <div class="cmd-row">
+                <pre>curl -s "http://localhost:3000/api/email/analytics?days=7" | jq</pre>
+                <button type="button" class="ghost copy-cmd">Copiar</button>
+              </div>
+            </article>
+            <article class="cmd-card">
+              <h4>Criar / sincronizar campanhas</h4>
+              <div class="cmd-row">
+                <pre>node scripts/seed-email-campaigns.js</pre>
+                <button type="button" class="ghost copy-cmd">Copiar</button>
+              </div>
+              <div class="cmd-row">
+                <pre>node scripts/expand-campaign-coverage.js --dry-run</pre>
+                <button type="button" class="ghost copy-cmd">Copiar</button>
+              </div>
+              <div class="cmd-row">
+                <pre>node scripts/expand-campaign-coverage.js</pre>
+                <button type="button" class="ghost copy-cmd">Copiar</button>
+              </div>
+            </article>
+            <article class="cmd-card">
+              <h4>Cotas dos provedores (CLI)</h4>
+              <div class="cmd-row">
+                <pre>node scripts/check-email-providers.js</pre>
+                <button type="button" class="ghost copy-cmd">Copiar</button>
+              </div>
+            </article>
+          </div>
+        </div>
+
+        <!-- DIAGNÓSTICO -->
+        <div class="ops-panel" id="panel-diagnostico" role="tabpanel" hidden>
+          <h3>Diagnóstico &amp; troubleshooting</h3>
+          <div class="cmd-list">
+            <article class="cmd-card">
+              <h4>Snapshot operacional (API agregada)</h4>
+              <p>Leads, e-mail, scraping e config em um JSON — substitui vários curls.</p>
+              <div class="cmd-row">
+                <pre>curl -s http://localhost:3000/api/ops/snapshot | jq</pre>
+                <button type="button" class="ghost copy-cmd">Copiar</button>
+              </div>
+              <div class="snapshot-actions">
+                <button type="button" id="loadSnapshotBtn" class="primary">Carregar snapshot ao vivo</button>
+              </div>
+              <div class="snapshot-box" id="snapshotOutput" hidden></div>
+            </article>
+            <article class="cmd-card">
+              <h4>401 Unauthorized nos endpoints sensíveis</h4>
+              <p>Endpoints de scrape/e-mail exigem <code>x-panel-token</code> quando <code>PANEL_RUN_TOKEN</code> está no <code>.env</code>.</p>
+              <div class="cmd-row">
+                <pre>curl -H "x-panel-token: $PANEL_RUN_TOKEN" ...</pre>
+                <button type="button" class="ghost copy-cmd">Copiar</button>
+              </div>
+              <div class="tag-row"><span class="tag warn">reinicie o servidor após mudar .env</span></div>
+            </article>
+            <article class="cmd-card">
+              <h4>E-mail não envia — checklist</h4>
+              <p>1) Cotas → 2) Teste isolado → 3) Dry-run da campanha.</p>
+              <div class="cmd-row">
+                <pre>curl -s http://localhost:3000/api/email/status | jq '.remaining'</pre>
+                <button type="button" class="ghost copy-cmd">Copiar</button>
+              </div>
+              <div class="cmd-row">
+                <pre>curl -X POST -H "x-panel-token: $PANEL_RUN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"toEmail":"voce@gmail.com","subject":"Teste","template":"Olá {{nome}}"}' \
+  http://localhost:3000/api/email/test</pre>
+                <button type="button" class="ghost copy-cmd">Copiar</button>
+              </div>
+            </article>
+            <article class="cmd-card">
+              <h4>Tracking desabilitado (pixel/cliques)</h4>
+              <p>Sem <code>APP_BASE_URL</code> público no <code>.env</code>, links de tracking não são injetados.</p>
+              <div class="tag-row"><span class="tag warn">APP_BASE_URL=https://seu-dominio.com</span></div>
+            </article>
+            <article class="cmd-card">
+              <h4>Card “E-mail contatável” zerado</h4>
+              <p>Servidor com código antigo em memória — reinicie <code>npm run dev</code>.</p>
+              <div class="cmd-row">
+                <pre>curl -s http://localhost:3000/api/dashboard/summary | jq '.data.emailBreakdown'</pre>
+                <button type="button" class="ghost copy-cmd">Copiar</button>
+              </div>
+            </article>
+            <article class="cmd-card">
+              <h4>Descobrir IP público (autorizar serviços)</h4>
+              <div class="cmd-row">
+                <pre>curl -s https://api.ipify.org</pre>
+                <button type="button" class="ghost copy-cmd">Copiar</button>
+              </div>
+            </article>
+          </div>
+        </div>
+
+        <!-- GIT -->
+        <div class="ops-panel" id="panel-git" role="tabpanel" hidden>
+          <h3>Git</h3>
+          <div class="cmd-list">
+            <article class="cmd-card">
+              <h4>Status e diff</h4>
+              <div class="cmd-row">
+                <pre>git status</pre>
+                <button type="button" class="ghost copy-cmd">Copiar</button>
+              </div>
+              <div class="cmd-row">
+                <pre>git diff</pre>
+                <button type="button" class="ghost copy-cmd">Copiar</button>
+              </div>
+              <div class="cmd-row">
+                <pre>git diff --staged</pre>
+                <button type="button" class="ghost copy-cmd">Copiar</button>
+              </div>
+            </article>
+            <article class="cmd-card">
+              <h4>Adicionar arquivos (evite git add .)</h4>
+              <div class="cmd-row">
+                <pre>git add caminho/do/arquivo.js</pre>
+                <button type="button" class="ghost copy-cmd">Copiar</button>
+              </div>
+            </article>
+            <article class="cmd-card">
+              <h4>Histórico recente</h4>
+              <div class="cmd-row">
+                <pre>git log --oneline -20</pre>
+                <button type="button" class="ghost copy-cmd">Copiar</button>
+              </div>
+            </article>
+            <article class="cmd-card">
+              <h4>Nova branch de feature</h4>
+              <div class="cmd-row">
+                <pre>git checkout -b nome-da-feature</pre>
+                <button type="button" class="ghost copy-cmd">Copiar</button>
+              </div>
+            </article>
+          </div>
+        </div>
+
+        <!-- DEV -->
+        <div class="ops-panel" id="panel-dev" role="tabpanel" hidden>
+          <h3>Desenvolvimento &amp; qualidade</h3>
+          <div class="cmd-list">
+            <article class="cmd-card">
+              <h4>Testes automatizados</h4>
+              <div class="cmd-row">
+                <pre>npm test</pre>
+                <button type="button" class="ghost copy-cmd">Copiar</button>
+              </div>
+              <div class="cmd-row">
+                <pre>npm test -- tests/unit/emailExtractor.test.js</pre>
+                <button type="button" class="ghost copy-cmd">Copiar</button>
+              </div>
+              <div class="cmd-row">
+                <pre>npm test -- tests/unit/cnpjSource.test.js</pre>
+                <button type="button" class="ghost copy-cmd">Copiar</button>
+              </div>
+            </article>
+            <article class="cmd-card">
+              <h4>Linter</h4>
+              <div class="cmd-row">
+                <pre>npm run lint</pre>
+                <button type="button" class="ghost copy-cmd">Copiar</button>
+              </div>
+            </article>
+            <article class="cmd-card">
+              <h4>Buscar no código</h4>
+              <div class="cmd-row">
+                <pre>grep -rn "padrão" src/</pre>
+                <button type="button" class="ghost copy-cmd">Copiar</button>
+              </div>
+            </article>
+            <article class="cmd-card">
+              <h4>Smoke test e-mail (sem HTTP)</h4>
+              <div class="cmd-row">
+                <pre>node -e "const {getEmailStatus}=require('./src/services/emailService'); const db=require('./src/database/knex'); (async()=>{console.log(await getEmailStatus()); await db.destroy();})();"</pre>
+                <button type="button" class="ghost copy-cmd">Copiar</button>
+              </div>
+            </article>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <script>
+      const TAB_IDS = ["servidor", "docker", "banco", "scraping", "leads", "email", "diagnostico", "git", "dev"];
+
+      function activateTab(tabId) {
+        if (!TAB_IDS.includes(tabId)) tabId = "servidor";
+
+        document.querySelectorAll(".ops-tab").forEach((btn) => {
+          const active = btn.dataset.tab === tabId;
+          btn.classList.toggle("active", active);
+          btn.setAttribute("aria-selected", active ? "true" : "false");
+        });
+
+        document.querySelectorAll(".ops-panel").forEach((panel) => {
+          const active = panel.id === `panel-${tabId}`;
+          panel.classList.toggle("active", active);
+          panel.hidden = !active;
+        });
+
+        history.replaceState(null, "", `#${tabId}`);
+      }
+
+      document.querySelectorAll(".ops-tab").forEach((btn) => {
+        btn.addEventListener("click", () => activateTab(btn.dataset.tab));
+      });
+
+      const hashTab = location.hash.replace("#", "");
+      activateTab(hashTab || "servidor");
+
+      async function requestJson(url) {
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.json();
+      }
+
+      async function refreshHealth() {
+        const el = document.getElementById("healthBadge");
+        try {
+          await requestJson("/health");
+          el.textContent = "API: online";
+          el.style.color = "#0f7a6a";
+        } catch {
+          el.textContent = "API: offline";
+          el.style.color = "#a93c3c";
+        }
+      }
+
+      document.querySelectorAll(".copy-cmd").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          const pre = btn.closest(".cmd-row")?.querySelector("pre");
+          if (!pre) return;
+          try {
+            await navigator.clipboard.writeText(pre.textContent.trim());
+            const prev = btn.textContent;
+            btn.textContent = "Copiado!";
+            setTimeout(() => { btn.textContent = prev; }, 1500);
+          } catch {
+            btn.textContent = "Erro";
+          }
+        });
+      });
+
+      document.getElementById("loadSnapshotBtn").addEventListener("click", async () => {
+        const out = document.getElementById("snapshotOutput");
+        const btn = document.getElementById("loadSnapshotBtn");
+        btn.disabled = true;
+        btn.textContent = "Carregando…";
+        out.hidden = false;
+        out.textContent = "Aguardando API…";
+        try {
+          const payload = await requestJson("/api/ops/snapshot");
+          out.textContent = JSON.stringify(payload.data, null, 2);
+        } catch (err) {
+          out.textContent = `Erro: ${err.message}`;
+        } finally {
+          btn.disabled = false;
+          btn.textContent = "Carregar snapshot ao vivo";
+        }
+      });
+
+      refreshHealth();
+      setInterval(refreshHealth, 30000);
+    </script>
+  </body>
+</html>

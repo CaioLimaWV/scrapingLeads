@@ -30,6 +30,8 @@ module.exports = {
     // recebe 1 cópia idêntica à dos leads em cada disparo real (não dry-run)
     monitorTo: (process.env.EMAIL_MONITOR_TO || "").trim(),
     monitorName: (process.env.EMAIL_MONITOR_NAME || process.env.EMAIL_FROM_NAME || "Monitor").trim(),
+    mailersendFrom: (process.env.MAILERSEND_FROM || "").trim(),
+    mailersendFromName: (process.env.MAILERSEND_FROM_NAME || process.env.EMAIL_FROM_NAME || "Contato").trim(),
     defaultBatch: toNumber(process.env.EMAIL_DEFAULT_BATCH, 50),
     providers: [
       {

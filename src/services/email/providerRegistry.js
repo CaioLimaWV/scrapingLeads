@@ -5,6 +5,7 @@ const {
   isDailyQuotaError,
   isRateLimitError,
   isQuotaError,
+  isAuthError,
   parseResetHeader,
   parseRetryAfterSeconds
 } = require("./quotaErrors");
@@ -26,6 +27,7 @@ const FACTORIES = {
 
 let providers = null;
 const quotaBlockedUntil = new Map();
+const authBlockedProviders = new Map();
 const mailersendQuotaCache = { remaining: null, reset: null, fetchedAt: 0 };
 const MAILERSEND_QUOTA_CACHE_MS = 60_000;
 
@@ -41,6 +43,37 @@ function isProviderBlocked(name) {
     return false;
   }
   return true;
+}
+
+function markAuthBlocked(name, message) {
+  authBlockedProviders.set(name, {
+    message: String(message || "Authentication failed"),
+    blockedAt: new Date().toISOString()
+  });
+
+  if (name === "mailersend") {
+    mailersendQuotaCache.remaining = 0;
+    mailersendQuotaCache.fetchedAt = Date.now();
+  }
+
+  logger.warn({ provider: name, message }, "Provider blocked due to auth error");
+}
+
+function getAuthBlockedInfo() {
+  return Object.fromEntries(authBlockedProviders.entries());
+}
+
+function applyProviderFromOverride(provider, mailOptions) {
+  if (provider.name !== "mailersend") return mailOptions;
+
+  const fromEmail = env.email.mailersendFrom || env.email.from;
+  const fromName = env.email.mailersendFromName || env.email.fromName;
+  if (!fromEmail) return mailOptions;
+
+  return {
+    ...mailOptions,
+    from: `"${fromName}" <${fromEmail}>`
+  };
 }
 
 function markQuotaExhausted(name, resetAt = null) {
@@ -114,6 +147,10 @@ function getProviders() {
 }
 
 async function getProviderRemaining(provider, sent) {
+  if (authBlockedProviders.has(provider.name)) {
+    return 0;
+  }
+
   if (isProviderBlocked(provider.name)) {
     return 0;
   }
@@ -151,19 +188,28 @@ async function getTotalRemaining() {
   return capacity.reduce((sum, c) => sum + c.remaining, 0);
 }
 
-async function pickProvider(excludeNames = []) {
+async function pickProvider(excludeNames = [], options = {}) {
+  const { preferProvider = null } = options;
   const capacity = await getCapacityMap();
-  const candidates = capacity
-    .filter((c) => c.remaining > 0 && !excludeNames.includes(c.provider.name))
-    .sort((a, b) => b.remaining - a.remaining);
+  let candidates = capacity.filter(
+    (c) => c.remaining > 0 && !excludeNames.includes(c.provider.name)
+  );
 
+  if (preferProvider) {
+    const preferred = candidates.find((c) => c.provider.name === preferProvider);
+    if (preferred) return preferred.provider;
+  }
+
+  candidates = candidates.sort((a, b) => b.remaining - a.remaining);
   return candidates.length > 0 ? candidates[0].provider : null;
 }
 
 async function sendWithProvider(provider, mailOptions) {
+  const payload = applyProviderFromOverride(provider, mailOptions);
+
   while (true) {
     try {
-      await provider.send(mailOptions);
+      await provider.send(payload);
       if (provider.name === "mailersend" && mailersendQuotaCache.remaining !== null) {
         mailersendQuotaCache.remaining = Math.max(0, mailersendQuotaCache.remaining - 1);
       }
@@ -171,6 +217,11 @@ async function sendWithProvider(provider, mailOptions) {
     } catch (err) {
       if (isDailyQuotaError(err)) {
         markQuotaExhausted(provider.name, parseResetHeader(err));
+        throw err;
+      }
+
+      if (isAuthError(err)) {
+        markAuthBlocked(provider.name, err.message);
         throw err;
       }
 
@@ -189,12 +240,13 @@ async function sendWithProvider(provider, mailOptions) {
   }
 }
 
-async function sendWithFallback(mailOptions) {
+async function sendWithFallback(mailOptions, options = {}) {
+  const { preferProvider = null } = options;
   const tried = [];
   let lastError = null;
 
   while (true) {
-    const provider = await pickProvider(tried);
+    const provider = await pickProvider(tried, { preferProvider });
     if (!provider) {
       const err = new Error(
         lastError
@@ -212,7 +264,9 @@ async function sendWithFallback(mailOptions) {
     } catch (err) {
       lastError = err;
       tried.push(provider.name);
-      if (isQuotaError(err) && !isRateLimitError(err)) {
+      if (isAuthError(err)) {
+        markAuthBlocked(provider.name, err.message);
+      } else if (isQuotaError(err) && !isRateLimitError(err)) {
         markQuotaExhausted(provider.name, parseResetHeader(err));
       }
       logger.warn(
@@ -226,6 +280,7 @@ async function sendWithFallback(mailOptions) {
 function resetForTests() {
   providers = null;
   quotaBlockedUntil.clear();
+  authBlockedProviders.clear();
   mailersendQuotaCache.remaining = null;
   mailersendQuotaCache.reset = null;
   mailersendQuotaCache.quota = null;
@@ -239,5 +294,7 @@ module.exports = {
   pickProvider,
   sendWithFallback,
   markQuotaExhausted,
+  markAuthBlocked,
+  getAuthBlockedInfo,
   resetForTests
 };

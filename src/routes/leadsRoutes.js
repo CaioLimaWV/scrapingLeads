@@ -6,7 +6,8 @@ const {
   listUncontactedLeadsWithPhone,
   markLeadAsContacted
 } = require("../repositories/leadRepository");
-const { getEngagementSummary, recalculateAllLeads, fetchLeadSignals, buildEngagementFromSignals } = require("../services/leadScoringService");
+const { getEngagementSummary, recalculateAllLeads, fetchLeadSignals, buildEngagementFromSignals, classifyClickUrl } = require("../services/leadScoringService");
+const { listLeadEmailEvents, VALID_EVENT_TYPES } = require("../repositories/emailRepository");
 
 const router = express.Router();
 
@@ -71,6 +72,50 @@ router.get("/engagement", async (req, res, next) => {
 
     const leads = await listEngagementLeads({ limit, offset, sourceId, temperature, funnelStage });
     res.json({ data: leads, pagination: { limit, offset, temperature, funnel_stage: funnelStage } });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get("/:id/email-events", async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    if (!id || !Number.isInteger(id)) {
+      return res.status(400).json({ message: "Invalid lead ID" });
+    }
+
+    const limit = parseLimit(req.query.limit, 50);
+    const offset = parseOffset(req.query.offset, 0);
+    const rawEventType = req.query.event_type ? String(req.query.event_type).toLowerCase() : null;
+    const eventType = rawEventType && VALID_EVENT_TYPES.has(rawEventType) ? rawEventType : null;
+
+    if (rawEventType && !eventType) {
+      return res.status(400).json({ message: "event_type inválido. Use: open, click ou unsubscribe" });
+    }
+
+    const result = await listLeadEmailEvents(id, { limit, offset, eventType });
+    if (!result) {
+      return res.status(404).json({ message: "Lead not found" });
+    }
+
+    const events = result.events.map((ev) => ({
+      id: ev.id,
+      event_type: ev.event_type,
+      occurred_at: ev.occurred_at,
+      url_clicked: ev.url_clicked || null,
+      click_type: ev.event_type === "click" ? classifyClickUrl(ev.url_clicked) : null,
+      email_send_id: ev.email_send_id,
+      email_subject: ev.email_subject,
+      email_sent_at: ev.email_sent_at,
+      campaign_name: ev.campaign_name || null,
+      utm_campaign: ev.utm_campaign || null,
+      provider: ev.provider || null
+    }));
+
+    res.json({
+      data: { lead: result.lead, events },
+      pagination: { limit, offset, total: result.total }
+    });
   } catch (error) {
     next(error);
   }

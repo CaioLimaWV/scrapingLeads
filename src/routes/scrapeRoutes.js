@@ -4,7 +4,7 @@ const cheerio = require("cheerio");
 const pdfParse = require("pdf-parse");
 const puppeteer = require("puppeteer");
 const env = require("../config/env");
-const { runScraping } = require("../services/scrapeService");
+const { startScraping, isScrapingActive } = require("../services/scrapeService");
 const db = require("../database/knex");
 const { createExecution, finishExecution } = require("../repositories/executionRepository");
 const { leadSchemaManual } = require("../validation/leadSchemaManual");
@@ -260,6 +260,18 @@ async function extractRenderedBodyText(url, timeoutMs) {
   }
 }
 
+router.get("/status", async (req, res, next) => {
+  try {
+    return res.status(200).json({
+      data: {
+        active: isScrapingActive()
+      }
+    });
+  } catch (error) {
+    return next(error);
+  }
+});
+
 router.post("/run", async (req, res, next) => {
   try {
     if (!hasValidToken(req)) {
@@ -276,8 +288,18 @@ router.post("/run", async (req, res, next) => {
       }
     }
 
-    const result = await runScraping({ sourceId });
-    return res.status(200).json({ data: result });
+    const launch = await startScraping({ sourceId });
+    if (launch.alreadyRunning) {
+      return res.status(409).json({
+        message: "Ja existe um scraping em andamento. Aguarde a conclusao ou atualize a tabela de execucoes.",
+        data: launch
+      });
+    }
+
+    return res.status(202).json({
+      message: "Scraping iniciado em background.",
+      data: launch
+    });
   } catch (error) {
     return next(error);
   }
